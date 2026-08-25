@@ -1,24 +1,42 @@
 /**
- * Progressive discovery for the DeepSeek Harness tool registry.
+ * Cache-stable progressive disclosure for the DeepSeek Harness tool registry.
  *
- * The plugin changes one agent-scoped visibility layer at pre-step boundaries.
- * It never mutates tool definitions and never changes another agent's view.
+ * The default mode keeps one byte-stable model-facing surface and dispatches
+ * deferred tools through the ordinary Harness execution pipeline. A legacy
+ * dynamic mode remains available for deployments that require native schemas.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { InferValue, JsonValue, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { buildCatalog, matchesToolName } from './catalog.js'
+import { CallId } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { defineTool, renderToolsSdk, renderToolsSdkPy } from '@deepseek-ai/dsh-tools'
+import type {
+  InferValue,
+  JsonSchemaNode,
+  JsonValue,
+  ToolExecutionResult,
+  ToolExecutionToken,
+} from '@deepseek-ai/dsh-tools'
+import {
+  buildCatalog,
+  estimateSchemaTokens,
+  matchesToolName,
+  searchTools,
+} from './catalog.js'
 import {
   DEFAULT_ACTIVATION_GROUP_LIMIT,
   DEFAULT_ALWAYS_VISIBLE,
   DEFAULT_CHARACTERS_PER_TOKEN,
+  DEFAULT_DEFER_TOOL_GUIDANCE,
+  DEFAULT_DISPATCH_TOOL_NAME,
   DEFAULT_GROUPS,
   DEFAULT_MAX_ACTIVE_GROUPS,
   DEFAULT_MAX_ACTIVE_TOOL_TOKENS,
   DEFAULT_MAX_RESULTS,
+  DEFAULT_MODE,
+  DEFAULT_REQUIRE_DISCOVERY,
   DEFAULT_RETENTION_TURNS,
   DEFAULT_SKILL_BINDINGS,
   DEFAULT_TOOL_NAME,
@@ -32,11 +50,12 @@ import {
   snapshotState,
   touchTool,
 } from './state.js'
-import type {
-  ProgressiveState,
-} from './state.js'
+import type { ProgressiveState } from './state.js'
 import type {
   ActiveGroupState,
+  DeferredToolMatch,
+  ProgressiveMode,
+  ProxySearchResultValue,
   ResolvedConfig,
   SearchResultValue,
   SkillBindingConfig,
@@ -45,7 +64,7 @@ import type {
   ToolSchemaView,
 } from './types.js'
 
-export { buildCatalog, estimateSchemaTokens, searchCatalog } from './catalog.js'
+export { buildCatalog, estimateSchemaTokens, searchCatalog, searchTools } from './catalog.js'
 export {
   activateGroups,
   createProgressiveState,
@@ -58,6 +77,9 @@ export {
 export type {
   ActiveGroupState,
   CatalogTool,
+  DeferredToolMatch,
+  ProgressiveMode,
+  ProxySearchResultValue,
   ResolvedConfig,
   SearchMatch,
   SearchResultValue,
@@ -70,29 +92,37 @@ export type {
 } from './types.js'
 
 export const name = 'progressive-tools'
-export const inject = ['tools']
+export const inject = ['tools', 'systemPrompt']
 
 export interface Config {
+  /** Stable proxy is cache-friendly; dynamic exposes changing native families. */
+  readonly mode?: ProgressiveMode
   /** Registered discovery tool name. */
   readonly toolName?: string
-  /** Tool-name wildcard patterns that stay visible without activation. */
+  /** Registered stable dispatcher name. */
+  readonly dispatchToolName?: string
+  /** Tool-name wildcard patterns that stay directly visible. */
   readonly alwaysVisible?: readonly string[]
   /** Ordered family rules. The first matching family owns a tool. */
   readonly groups?: readonly ToolGroupConfig[]
-  /** Successful skill calls that should activate tool families. */
+  /** Successful skill calls that make bound tools dispatchable. */
   readonly skillBindings?: readonly SkillBindingConfig[]
-  /** Maximum search matches returned to the caller. */
+  /** Maximum exact search matches returned to the caller. */
   readonly maxResults?: number
-  /** Highest-ranked families activated by one search. */
+  /** Highest-ranked families activated by one dynamic-mode search. */
   readonly activationGroupLimit?: number
-  /** Maximum retained active families. */
+  /** Maximum retained active families in dynamic mode. */
   readonly maxActiveGroups?: number
-  /** Approximate schema-token budget for active families. */
+  /** Approximate schema-token budget for active dynamic-mode families. */
   readonly maxActiveToolTokens?: number
-  /** Turns of inactivity before an active family expires; zero disables expiry. */
+  /** Dynamic-mode inactivity turns before expiry; zero disables expiry. */
   readonly retentionTurns?: number
   /** Schema characters represented by one estimated token. */
   readonly charactersPerToken?: number
+  /** Require a successful search or skill binding before proxy dispatch. */
+  readonly requireDiscovery?: boolean
+  /** Remove exact hidden tool guidance sections from the stable prompt. */
+  readonly deferToolGuidance?: boolean
 }
 
 const groupConfigSchema = z.object({
@@ -109,7 +139,9 @@ const skillBindingSchema = z.object({
 })
 
 export const Config = z.object({
+  mode: z.string().default(DEFAULT_MODE),
   toolName: z.string().default(DEFAULT_TOOL_NAME),
+  dispatchToolName: z.string().default(DEFAULT_DISPATCH_TOOL_NAME),
   alwaysVisible: z.array(z.string()).default([...DEFAULT_ALWAYS_VISIBLE]),
   groups: z.array(groupConfigSchema).default(DEFAULT_GROUPS.map(group => ({
     ...group,
@@ -125,6 +157,8 @@ export const Config = z.object({
   maxActiveToolTokens: z.number().default(DEFAULT_MAX_ACTIVE_TOOL_TOKENS),
   retentionTurns: z.number().default(DEFAULT_RETENTION_TURNS),
   charactersPerToken: z.number().default(DEFAULT_CHARACTERS_PER_TOKEN),
+  requireDiscovery: z.boolean().default(DEFAULT_REQUIRE_DISCOVERY),
+  deferToolGuidance: z.boolean().default(DEFAULT_DEFER_TOOL_GUIDANCE),
 }) as unknown as z<Config>
 
 function nonEmpty(value: string, path: string): string {
@@ -141,7 +175,16 @@ function integer(value: number, path: string, minimum: number): number {
 }
 
 export function resolveConfig(config: Config = {}): ResolvedConfig {
+  const mode = config.mode ?? DEFAULT_MODE
+  if (mode !== 'stable-proxy' && mode !== 'dynamic') {
+    throw new Error('mode must be either "stable-proxy" or "dynamic"')
+  }
   const toolName = nonEmpty(config.toolName ?? DEFAULT_TOOL_NAME, 'toolName')
+  const dispatchToolName = nonEmpty(
+    config.dispatchToolName ?? DEFAULT_DISPATCH_TOOL_NAME,
+    'dispatchToolName',
+  )
+  if (toolName === dispatchToolName) throw new Error('toolName and dispatchToolName must differ')
   const alwaysVisible = (config.alwaysVisible ?? DEFAULT_ALWAYS_VISIBLE)
     .map((pattern, index) => nonEmpty(pattern, `alwaysVisible[${index}]`))
   const groups = (config.groups ?? DEFAULT_GROUPS).map((group, index): ToolGroupConfig => {
@@ -173,7 +216,9 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       nonEmpty(group, `skillBindings[${index}].groups[${groupIndex}]`),
     )
     for (const group of boundGroups) {
-      if (!groupIds.has(group)) throw new Error(`skill binding ${JSON.stringify(skill)} names unknown group ${JSON.stringify(group)}`)
+      if (!groupIds.has(group)) {
+        throw new Error(`skill binding ${JSON.stringify(skill)} names unknown group ${JSON.stringify(group)}`)
+      }
     }
     return { skill, groups: boundGroups }
   })
@@ -188,7 +233,9 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     throw new Error('activationGroupLimit must not exceed maxActiveGroups')
   }
   return {
+    mode,
     toolName,
+    dispatchToolName,
     alwaysVisible,
     groups,
     skillBindings,
@@ -206,15 +253,19 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       'charactersPerToken',
       1,
     ),
+    requireDiscovery: config.requireDiscovery ?? DEFAULT_REQUIRE_DISCOVERY,
+    deferToolGuidance: config.deferToolGuidance ?? DEFAULT_DEFER_TOOL_GUIDANCE,
   }
 }
 
 interface AgentState {
   readonly agent: Agent
   readonly progressive: ProgressiveState
+  readonly discovered: Set<string>
   restriction: (() => void) | undefined
   restrictableNames: Set<string>
   eagerNames: Set<string>
+  stableNames: Set<string> | undefined
   catalogDirty: boolean
   restored: boolean
 }
@@ -223,6 +274,10 @@ interface LoggedCall {
   readonly name: string
   readonly arguments: unknown
   readonly turn: number
+}
+
+interface ToolSdkSchema extends ToolSchemaView {
+  readonly output: JsonSchemaNode
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -266,6 +321,19 @@ function snapshotFromSearchValue(value: unknown): StateSnapshot | undefined {
   return parseSnapshot(value.state)
 }
 
+function discoveredFromSearchValue(value: unknown): string[] | undefined {
+  if (!isRecord(value) || value.protocol !== 'dsh-progressive-tools/v2') return undefined
+  if (Array.isArray(value.discoveredTools)
+    && value.discoveredTools.every(name => typeof name === 'string')) {
+    return value.discoveredTools as string[]
+  }
+  if (!Array.isArray(value.matches)) return undefined
+  const names = value.matches
+    .map(match => isRecord(match) && typeof match.name === 'string' ? match.name : undefined)
+    .filter((name): name is string => name !== undefined)
+  return names
+}
+
 function textContentValue(content: unknown): unknown {
   if (!Array.isArray(content)) return undefined
   const first = content[0]
@@ -297,7 +365,9 @@ function eventTurn(event: unknown): number {
   return event.data.turn as number
 }
 
-function cloneSchemas(value: readonly { name: string; description: string; parameters: Record<string, unknown> }[]): ToolSchemaView[] {
+function cloneSchemas(
+  value: readonly { name: string; description: string; parameters: Record<string, unknown> }[],
+): ToolSchemaView[] {
   return value.map(schema => ({
     name: schema.name,
     description: schema.description,
@@ -305,10 +375,17 @@ function cloneSchemas(value: readonly { name: string; description: string; param
   }))
 }
 
-function stateMeta(value: SearchResultValue): JsonValue {
+function legacyStateMeta(value: SearchResultValue): JsonValue {
   return {
     protocol: value.protocol,
     state: value.state as unknown as JsonValue,
+  }
+}
+
+function proxyStateMeta(value: ProxySearchResultValue): JsonValue {
+  return {
+    protocol: value.protocol,
+    discoveredTools: [...value.discoveredTools],
   }
 }
 
@@ -322,7 +399,7 @@ const activeGroupSchema = {
   },
 } as const
 
-const searchResultSchema = {
+const legacySearchResultSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
@@ -363,11 +440,43 @@ const searchResultSchema = {
   },
 } as const
 
-function resultValueFromExecution(result: Readonly<ToolExecutionResult>): SearchResultValue | undefined {
-  if (result.isError || !isRecord(result.value) || result.value.protocol !== 'dsh-progressive-tools/v1') return undefined
+const proxyResultSchema = {
+  type: 'object',
+  additionalProperties: true,
+} as const
+
+function legacyResultFromExecution(result: Readonly<ToolExecutionResult>): SearchResultValue | undefined {
+  if (result.isError || !isRecord(result.value) || result.value.protocol !== 'dsh-progressive-tools/v1') {
+    return undefined
+  }
   const snapshot = parseSnapshot(result.value.state)
   if (snapshot === undefined) return undefined
   return result.value as unknown as SearchResultValue
+}
+
+function proxyResultFromExecution(result: Readonly<ToolExecutionResult>): ProxySearchResultValue | undefined {
+  if (result.isError || !isRecord(result.value) || result.value.protocol !== 'dsh-progressive-tools/v2') {
+    return undefined
+  }
+  return result.value as unknown as ProxySearchResultValue
+}
+
+function proxyContent(value: unknown): ContentBlock[] {
+  if (!isRecord(value) || !Array.isArray(value.content)) {
+    return [{ type: 'text', text: JSON.stringify(value) }]
+  }
+  return value.content as ContentBlock[]
+}
+
+function exactGuidanceForDeferredTool(sectionName: string, deferredNames: ReadonlySet<string>): boolean {
+  if (!sectionName.startsWith('tool:') || sectionName === 'tools:sdk' || sectionName === 'tools:code-only') {
+    return false
+  }
+  const suffix = sectionName.slice('tool:'.length)
+  for (const name of deferredNames) {
+    if (suffix === name || suffix.startsWith(`${name}:`)) return true
+  }
+  return false
 }
 
 export function apply(ctx: Context, input: Config): void {
@@ -375,6 +484,7 @@ export function apply(ctx: Context, input: Config): void {
   const states = new WeakMap<Agent, AgentState>()
   const liveStates = new Set<AgentState>()
   const skillBindings = new Map(config.skillBindings.map(binding => [binding.skill, binding.groups] as const))
+  const authorizedProxyParents = new Set<ToolExecutionToken>()
   let restrictionMutationDepth = 0
 
   const mutateRestriction = <T>(operation: () => T): T => {
@@ -403,9 +513,11 @@ export function apply(ctx: Context, input: Config): void {
     const created: AgentState = {
       agent,
       progressive: createProgressiveState(buildCatalog([], config.groups, config.charactersPerToken), latestTurn(agent)),
+      discovered: new Set(),
       restriction: undefined,
       restrictableNames: new Set(),
       eagerNames: new Set(),
+      stableNames: undefined,
       catalogDirty: true,
       restored: false,
     }
@@ -414,11 +526,21 @@ export function apply(ctx: Context, input: Config): void {
     return created
   }
 
+  const discoverGroups = (state: AgentState, groups: readonly string[]): void => {
+    for (const groupId of groups) {
+      const group = state.progressive.catalog.groups.get(groupId)
+      if (group === undefined) continue
+      for (const tool of group.tools) state.discovered.add(tool.name)
+    }
+  }
+
   const applySkillBinding = (state: AgentState, argumentsValue: unknown, turn: number): void => {
     const skillName = skillNameFromArguments(argumentsValue)
     if (skillName === undefined) return
     const groups = skillBindings.get(skillName)
-    if (groups !== undefined) activateGroups(state.progressive, groups, turn, config)
+    if (groups === undefined) return
+    if (config.mode === 'stable-proxy') discoverGroups(state, groups)
+    else activateGroups(state.progressive, groups, turn, config)
   }
 
   const restoreFromEvents = (state: AgentState): void => {
@@ -439,16 +561,28 @@ export function apply(ctx: Context, input: Config): void {
         const call = calls.get(result.callId)
         if (call === undefined) continue
         if (call.name === config.toolName) {
-          const snapshot = isRecord(event.data.meta)
-            ? snapshotFromSearchValue({ protocol: event.data.meta.protocol, state: event.data.meta.state })
-            : undefined
-          const fallback = snapshotFromSearchValue(result.value)
-          if (snapshot !== undefined || fallback !== undefined) {
-            restoreSnapshot(state.progressive, snapshot ?? fallback!)
+          if (config.mode === 'stable-proxy') {
+            const fromMeta = isRecord(event.data.meta)
+              ? discoveredFromSearchValue({
+                  protocol: event.data.meta.protocol,
+                  discoveredTools: event.data.meta.discoveredTools,
+                })
+              : undefined
+            for (const name of fromMeta ?? discoveredFromSearchValue(result.value) ?? []) {
+              state.discovered.add(name)
+            }
+          } else {
+            const snapshot = isRecord(event.data.meta)
+              ? snapshotFromSearchValue({ protocol: event.data.meta.protocol, state: event.data.meta.state })
+              : undefined
+            const fallback = snapshotFromSearchValue(result.value)
+            if (snapshot !== undefined || fallback !== undefined) {
+              restoreSnapshot(state.progressive, snapshot ?? fallback!)
+            }
           }
         } else if (call.name === 'skill') {
           applySkillBinding(state, call.arguments, call.turn)
-        } else {
+        } else if (config.mode === 'dynamic') {
           touchTool(state.progressive, call.name, call.turn)
         }
         continue
@@ -457,17 +591,45 @@ export function apply(ctx: Context, input: Config): void {
       const nested = event.data
       if (nested.isError) continue
       if (nested.name === config.toolName) {
-        const snapshot = snapshotFromSearchValue(textContentValue(nested.content))
-        if (snapshot !== undefined) restoreSnapshot(state.progressive, snapshot)
+        const value = textContentValue(nested.content)
+        if (config.mode === 'stable-proxy') {
+          for (const name of discoveredFromSearchValue(value) ?? []) state.discovered.add(name)
+        } else {
+          const snapshot = snapshotFromSearchValue(value)
+          if (snapshot !== undefined) restoreSnapshot(state.progressive, snapshot)
+        }
       } else if (nested.name === 'skill') {
         applySkillBinding(state, nested.arguments, eventTurn(event))
-      } else {
+      } else if (config.mode === 'dynamic') {
         touchTool(state.progressive, nested.name, eventTurn(event))
       }
     }
   }
 
-  const rebuildCatalog = (state: AgentState): void => {
+  const rebuildStableCatalog = (state: AgentState): void => {
+    const schemas = cloneSchemas(state.agent.ctx.tools.schemas(state.agent))
+    if (state.stableNames === undefined) {
+      state.stableNames = new Set(schemas
+        .filter(schema => schema.name === config.toolName
+          || schema.name === config.dispatchToolName
+          || matchesToolName(schema.name, config.alwaysVisible))
+        .map(schema => schema.name))
+    }
+    const managed = schemas.filter(schema =>
+      schema.name !== 'run_code' && !state.stableNames!.has(schema.name),
+    )
+    state.progressive.catalog = buildCatalog(managed, config.groups, config.charactersPerToken)
+    for (const name of state.discovered) {
+      if (!state.progressive.catalog.tools.has(name)) state.discovered.delete(name)
+    }
+    if (!state.restored) {
+      restoreFromEvents(state)
+      state.restored = true
+    }
+    state.catalogDirty = false
+  }
+
+  const rebuildDynamicCatalog = (state: AgentState): void => {
     const previous = snapshotState(state.progressive)
     disposeRestriction(state)
     const unrestricted = cloneSchemas(state.agent.ctx.tools.schemas(state.agent))
@@ -494,7 +656,7 @@ export function apply(ctx: Context, input: Config): void {
     state.catalogDirty = false
   }
 
-  const installRestriction = (state: AgentState): void => {
+  const installDynamicRestriction = (state: AgentState): void => {
     disposeRestriction(state)
     const allow = new Set(state.eagerNames)
     for (const groupId of state.progressive.active.keys()) {
@@ -507,77 +669,304 @@ export function apply(ctx: Context, input: Config): void {
     state.restriction = mutateRestriction(() => state.agent.ctx.tools.restrict({ allow: [...allow].sort() }))
   }
 
-  const prepareState = (agent: Agent, turn: number): AgentState => {
+  const prepareStableState = (agent: Agent): AgentState => {
     const state = ensureState(agent)
-    state.progressive.currentTurn = Math.max(state.progressive.currentTurn, turn)
-    if (state.catalogDirty) rebuildCatalog(state)
-    expireGroups(state.progressive, state.progressive.currentTurn, config)
-    installRestriction(state)
+    if (state.catalogDirty) rebuildStableCatalog(state)
     return state
   }
 
-  ctx.tools.register(defineTool({
-    name: config.toolName,
-    description: 'Search the hidden tool catalog and activate only the relevant tool families for the next step. Use status to inspect active families or reset to release them.',
-    parameters: {
-      query: {
-        type: 'string',
-        description: 'Capability to find. Required for search; use task-oriented words such as browser, database, files, vision, or remote server.',
+  const prepareDynamicState = (agent: Agent, turn: number): AgentState => {
+    const state = ensureState(agent)
+    state.progressive.currentTurn = Math.max(state.progressive.currentTurn, turn)
+    if (state.catalogDirty) rebuildDynamicCatalog(state)
+    expireGroups(state.progressive, state.progressive.currentTurn, config)
+    installDynamicRestriction(state)
+    return state
+  }
+
+  const stableSearchResult = (
+    state: AgentState,
+    action: 'search' | 'status',
+    query: string,
+    matches: readonly DeferredToolMatch[],
+  ): ProxySearchResultValue => {
+    const discovered = new Set(state.discovered)
+    for (const match of matches) discovered.add(match.name)
+    const stableSchemas = cloneSchemas(state.agent.ctx.tools.schemas(state.agent))
+      .filter(schema => state.stableNames?.has(schema.name))
+    const estimatedVisibleTokens = stableSchemas.reduce(
+      (total, schema) => total + estimateSchemaTokens(schema, config.charactersPerToken),
+      0,
+    )
+    return {
+      protocol: 'dsh-progressive-tools/v2',
+      mode: 'stable-proxy',
+      action,
+      query,
+      matches,
+      stableTools: [...state.stableNames ?? []].sort(),
+      discoveredTools: [...discovered].sort(),
+      catalogTools: state.progressive.catalog.tools.size,
+      estimatedVisibleTokens,
+      estimatedCatalogTokens: state.progressive.catalog.totalEstimatedTokens,
+      estimatedSavedTokens: state.progressive.catalog.totalEstimatedTokens,
+      instruction: action === 'search'
+        ? `Call ${config.dispatchToolName} with an exact returned name and arguments matching its parameters schema.`
+        : `Use ${config.toolName} with a task-oriented query to load exact deferred definitions.`,
+    }
+  }
+
+  if (config.mode === 'stable-proxy') {
+    ctx.tools.register(defineTool({
+      name: config.toolName,
+      description: `Search deferred tools by capability. Use this whenever the visible tools do not cover the task. Returns exact names, descriptions, and parameter schemas for ${config.dispatchToolName}.`,
+      parameters: {
+        query: {
+          type: 'string',
+          description: 'Task-oriented capability query. Include the object, action, or service involved.',
+        },
+        action: {
+          type: 'string',
+          enum: ['search', 'status'],
+          description: 'Search definitions or inspect the stable catalog. Defaults to search.',
+        },
+        max_results: {
+          type: 'integer',
+          description: `Maximum exact tool definitions to return, up to ${config.maxResults}.`,
+        },
       },
-      action: {
-        type: 'string',
-        enum: ['search', 'status', 'reset'],
-        description: 'search activates matching families; status inspects; reset releases all activated families. Defaults to search.',
+      output: {
+        schema: proxyResultSchema,
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+        presentationMeta: (_args, value) => proxyStateMeta(value as unknown as ProxySearchResultValue),
       },
-      max_results: {
-        type: 'integer',
-        description: `Maximum matches to return, up to ${config.maxResults}.`,
+      async execute(args, exec) {
+        if (exec.agent === undefined) throw new Error(`${config.toolName} requires an agent-scoped execution`)
+        const state = prepareStableState(exec.agent)
+        const action = args.action ?? 'search'
+        const query = args.query?.trim() ?? ''
+        if (action === 'search' && query === '') throw new Error('query is required when action is search')
+        if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > config.maxResults)) {
+          throw new Error(`max_results must be between 1 and ${config.maxResults}`)
+        }
+        const matches = action === 'search'
+          ? searchTools(state.progressive.catalog, query, args.max_results ?? config.maxResults)
+          : []
+        return stableSearchResult(
+          state,
+          action,
+          action === 'search' ? query : '',
+          matches,
+        ) as unknown as InferValue<typeof proxyResultSchema>
       },
-    },
-    output: {
-      schema: searchResultSchema,
-      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
-      presentationMeta: (_args, value) => stateMeta(value as unknown as SearchResultValue),
-    },
-    async execute(args, exec) {
-      if (exec.agent === undefined) throw new Error(`${config.toolName} requires an agent-scoped execution`)
-      const state = ensureState(exec.agent)
-      if (state.catalogDirty) rebuildCatalog(state)
-      const action = args.action ?? 'search'
-      const query = args.query?.trim() ?? ''
-      if (action === 'search' && query === '') throw new Error('query is required when action is search')
-      if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > config.maxResults)) {
-        throw new Error(`max_results must be between 1 and ${config.maxResults}`)
+    }))
+
+    ctx.tools.register(defineTool({
+      name: config.dispatchToolName,
+      description: `Execute one exact tool returned by ${config.toolName}. Copy the returned name exactly and pass arguments that satisfy its parameters schema.`,
+      parameters: {
+        name: {
+          type: 'string',
+          required: true,
+          description: `Exact tool name returned by ${config.toolName}.`,
+        },
+        arguments: {
+          type: 'object',
+          additionalProperties: true,
+          required: true,
+          description: 'Arguments matching the selected tool parameters schema.',
+        },
+      },
+      output: {
+        schema: proxyResultSchema,
+        render: (_args, value) => proxyContent(value),
+        presentationMeta: (args) => ({
+          protocol: 'dsh-progressive-tools/dispatch-v1',
+          tool: args.name,
+        }),
+      },
+      async execute(args, exec) {
+        if (exec.agent === undefined) throw new Error(`${config.dispatchToolName} requires an agent-scoped execution`)
+        const state = prepareStableState(exec.agent)
+        if (!state.progressive.catalog.tools.has(args.name)) {
+          if (state.stableNames?.has(args.name)) {
+            throw new Error(`tool ${JSON.stringify(args.name)} is already visible and should be called directly`)
+          }
+          throw new Error(`tool ${JSON.stringify(args.name)} is not in the deferred catalog`)
+        }
+        if (config.requireDiscovery && !state.discovered.has(args.name)) {
+          throw new Error(`tool ${JSON.stringify(args.name)} has not been discovered; call ${config.toolName} first`)
+        }
+        const definition = exec.agent.ctx.tools.get(args.name, exec.agent)
+        if (definition === undefined) throw new Error(`tool ${JSON.stringify(args.name)} is no longer registered`)
+
+        authorizedProxyParents.add(exec.token)
+        try {
+          const nested = await exec.agent.ctx.tools.execute({
+            signal: exec.signal,
+            callId: CallId(`${String(exec.callId)}:dispatch`),
+            rootCallId: exec.rootCallId,
+            parent: exec.token,
+            name: args.name,
+            arguments: args.arguments,
+            agent: exec.agent,
+          })
+          for (const context of nested.additionalContexts ?? []) exec.deferContext(context)
+          if (nested.concludesTurn === true) exec.concludeTurn()
+          if (nested.isError) throw new Error(`${args.name}: ${nested.error.message}`)
+          return {
+            protocol: 'dsh-progressive-tools/dispatch-v1',
+            tool: args.name,
+            value: nested.value,
+            content: nested.content as unknown as JsonValue,
+          } as InferValue<typeof proxyResultSchema>
+        } finally {
+          authorizedProxyParents.delete(exec.token)
+        }
+      },
+    }))
+
+    ctx.systemPrompt.section({
+      name: 'progressive-tools:discovery',
+      order: 140,
+      text: `Only the common tools are listed initially. When the task needs another capability, call ${config.toolName}; then call ${config.dispatchToolName} with an exact returned name and schema-valid arguments. Do not claim a capability is unavailable before searching.`,
+    })
+
+    ctx.tools.guard((execution) => {
+      const agent = execution.agent
+      if (agent === undefined) return undefined
+      const state = states.get(agent)
+      if (state === undefined) return undefined
+      if (execution.parent !== undefined && authorizedProxyParents.has(execution.parent)) {
+        authorizedProxyParents.add(execution.token)
+        return undefined
       }
-      return proposeSearch(
-        state.progressive,
-        action,
-        query,
-        args.max_results ?? config.maxResults,
-        config,
-      ) as unknown as InferValue<typeof searchResultSchema>
-    },
-  }))
+      if (execution.name === 'run_code' || state.stableNames?.has(execution.name)) return undefined
+      if (!state.progressive.catalog.tools.has(execution.name)) return undefined
+      return `tool ${JSON.stringify(execution.name)} is deferred; use ${config.toolName} and ${config.dispatchToolName}`
+    })
+  } else {
+    ctx.tools.register(defineTool({
+      name: config.toolName,
+      description: 'Search the hidden tool catalog and activate only the relevant tool families. Use status to inspect active families or reset to release them.',
+      parameters: {
+        query: {
+          type: 'string',
+          description: 'Capability to find. Required for search; use task-oriented words.',
+        },
+        action: {
+          type: 'string',
+          enum: ['search', 'status', 'reset'],
+          description: 'Search activates matching families; status inspects; reset releases them.',
+        },
+        max_results: {
+          type: 'integer',
+          description: `Maximum matches to return, up to ${config.maxResults}.`,
+        },
+      },
+      output: {
+        schema: legacySearchResultSchema,
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+        presentationMeta: (_args, value) => legacyStateMeta(value as unknown as SearchResultValue),
+      },
+      async execute(args, exec) {
+        if (exec.agent === undefined) throw new Error(`${config.toolName} requires an agent-scoped execution`)
+        const state = prepareDynamicState(exec.agent, latestTurn(exec.agent))
+        const action = args.action ?? 'search'
+        const query = args.query?.trim() ?? ''
+        if (action === 'search' && query === '') throw new Error('query is required when action is search')
+        if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > config.maxResults)) {
+          throw new Error(`max_results must be between 1 and ${config.maxResults}`)
+        }
+        return proposeSearch(
+          state.progressive,
+          action,
+          query,
+          args.max_results ?? config.maxResults,
+          config,
+        ) as InferValue<typeof legacySearchResultSchema>
+      },
+    }))
+  }
+
+  const shapeSdkSection = (state: AgentState, visibleNames: ReadonlySet<string>, text: string): string => {
+    const schemas: ToolSdkSchema[] = []
+    for (const name of [...visibleNames].sort()) {
+      if (name === 'run_code') continue
+      const definition = state.agent.ctx.tools.get(name, state.agent)
+      if (definition === undefined) continue
+      schemas.push({
+        name: definition.name,
+        description: definition.description,
+        parameters: definition.parameters,
+        output: definition.output.schema,
+      })
+    }
+    return text.includes('```python') ? renderToolsSdkPy(schemas) : renderToolsSdk(schemas)
+  }
+
+  ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+    const resolved = await next()
+    const agent = context.agent
+    if (agent === undefined) return resolved
+    const state = config.mode === 'stable-proxy'
+      ? prepareStableState(agent)
+      : prepareDynamicState(agent, latestTurn(agent))
+    const visibleNames = config.mode === 'stable-proxy'
+      ? new Set([...state.stableNames ?? [], 'run_code'])
+      : new Set(agent.ctx.tools.schemas(agent).map(schema => schema.name))
+    const deferredNames = config.mode === 'stable-proxy'
+      ? new Set(state.progressive.catalog.tools.keys())
+      : new Set<string>()
+    const sections = resolved.sections
+      .filter(section => !config.deferToolGuidance
+        || !exactGuidanceForDeferredTool(section.name, deferredNames))
+      .map(section => section.name === 'tools:sdk'
+        ? { ...section, text: shapeSdkSection(state, visibleNames, section.text) }
+        : section)
+    return {
+      ...resolved,
+      sections,
+      tools: resolved.tools.filter(schema => visibleNames.has(schema.name)),
+    }
+  }, { prepend: true })
+
+  ctx.on('agent/session-start', ({ agent }) => {
+    if (config.mode === 'stable-proxy') prepareStableState(agent)
+    else prepareDynamicState(agent, latestTurn(agent))
+  }, { prepend: true })
+
+  ctx.on('agent/inbox/claimed', ({ agent, turn }) => {
+    if (config.mode === 'dynamic') prepareDynamicState(agent, turn)
+  }, { prepend: true })
 
   ctx.on('agent/pre-step', async ({ agent, turn }, next): Promise<PreStepDecision> => {
-    prepareState(agent, turn)
+    if (config.mode === 'dynamic') prepareDynamicState(agent, turn)
     return next()
   }, { prepend: true })
 
   ctx.on('tools/result', (exec, result) => {
+    authorizedProxyParents.delete(exec.token)
     const agent = exec.agent
     if (agent === undefined || result.isError) return
     const state = ensureState(agent)
     if (exec.name === config.toolName) {
-      const value = resultValueFromExecution(result)
-      if (value !== undefined) restoreSnapshot(state.progressive, value.state)
+      if (config.mode === 'stable-proxy') {
+        const value = proxyResultFromExecution(result)
+        for (const name of value?.discoveredTools ?? []) state.discovered.add(name)
+      } else {
+        const value = legacyResultFromExecution(result)
+        if (value !== undefined) restoreSnapshot(state.progressive, value.state)
+        if (!state.catalogDirty) installDynamicRestriction(state)
+      }
       return
     }
     if (exec.name === 'skill') {
       applySkillBinding(state, exec.arguments, state.progressive.currentTurn)
+      if (config.mode === 'dynamic' && !state.catalogDirty) installDynamicRestriction(state)
       return
     }
-    touchTool(state.progressive, exec.name, state.progressive.currentTurn)
+    if (config.mode === 'dynamic') touchTool(state.progressive, exec.name, state.progressive.currentTurn)
   })
 
   ctx.on('tools/change', () => {
@@ -596,5 +985,6 @@ export function apply(ctx: Context, input: Config): void {
   ctx.effect(() => () => {
     for (const state of liveStates) disposeRestriction(state)
     liveStates.clear()
-  }, 'progressive-tools.agent-restrictions')
+    authorizedProxyParents.clear()
+  }, 'progressive-tools.agent-state')
 }

@@ -1,5 +1,6 @@
 import type {
   CatalogTool,
+  DeferredToolMatch,
   SearchMatch,
   ToolCatalog,
   ToolGroup,
@@ -40,6 +41,14 @@ function parameterKeys(value: unknown): string[] {
   return [...own, ...Object.values(record).flatMap(parameterKeys)]
 }
 
+function schemaSearchText(value: unknown): string {
+  if (value === null || typeof value !== 'object') return typeof value === 'string' ? value : ''
+  if (Array.isArray(value)) return value.map(schemaSearchText).join(' ')
+  return Object.entries(value as Record<string, unknown>)
+    .flatMap(([key, child]) => [key, schemaSearchText(child)])
+    .join(' ')
+}
+
 export function estimateSchemaTokens(schema: ToolSchemaView, charactersPerToken: number): number {
   return Math.max(1, Math.ceil(JSON.stringify(schema).length / charactersPerToken))
 }
@@ -48,7 +57,7 @@ function createCatalogTool(schema: ToolSchemaView, charactersPerToken: number): 
   return {
     ...schema,
     estimatedTokens: estimateSchemaTokens(schema, charactersPerToken),
-    searchText: normalize(`${schema.name} ${schema.description} ${parameterKeys(schema.parameters).join(' ')}`),
+    searchText: normalize(`${schema.name} ${schema.description} ${parameterKeys(schema.parameters).join(' ')} ${schemaSearchText(schema.parameters)}`),
   }
 }
 
@@ -170,6 +179,87 @@ export function searchCatalog(catalog: ToolCatalog, query: string, limit: number
       score,
       estimatedTokens: group.estimatedTokens,
       tools: group.tools.map(tool => tool.name),
+    }))
+}
+
+function termFrequency(documentTokens: readonly string[], term: string): number {
+  return documentTokens.reduce((count, token) => count + (token === term ? 1 : 0), 0)
+}
+
+/**
+ * Rank individual tools with exact-name bonuses and a compact BM25-style score.
+ * Definitions, parameter descriptions, enums, and nested property names all
+ * participate in the searchable document.
+ */
+export function searchTools(catalog: ToolCatalog, query: string, limit: number): DeferredToolMatch[] {
+  const normalizedQuery = normalize(query)
+  const queryTokens = [...new Set(tokens(query))]
+  if (normalizedQuery === '' || queryTokens.length === 0) return []
+
+  const documents = [...catalog.tools.values()].map(tool => ({
+    tool,
+    group: catalog.groups.get(catalog.toolToGroup.get(tool.name) ?? ''),
+    text: '',
+    tokens: [] as string[],
+  }))
+  for (const document of documents) {
+    const groupText = document.group === undefined
+      ? ''
+      : `${document.group.id} ${document.group.description} ${document.group.aliases.join(' ')}`
+    document.text = normalize(`${document.tool.searchText} ${groupText}`)
+    document.tokens = tokens(document.text)
+  }
+  const averageLength = documents.length === 0
+    ? 1
+    : documents.reduce((total, document) => total + document.tokens.length, 0) / documents.length
+  const k1 = 1.2
+  const b = 0.75
+
+  return documents
+    .map(({ tool, group, text, tokens: documentTokens }) => {
+      let score = 0
+      const normalizedName = normalize(tool.name)
+      if (normalizedName === normalizedQuery) score += 160
+      else if (normalizedName.includes(normalizedQuery)) score += 48
+      if (text.includes(normalizedQuery)) score += 20
+      const labels = [group?.id ?? '', ...group?.aliases ?? []]
+        .map(normalize)
+        .filter(label => label !== '')
+      if (labels.some(label => normalizedQuery.includes(label))) score += 40
+
+      for (const term of queryTokens) {
+        const frequency = termFrequency(documentTokens, term)
+        if (frequency === 0) continue
+        const documentFrequency = documents.reduce(
+          (count, document) => count + (document.tokens.includes(term) ? 1 : 0),
+          0,
+        )
+        const inverseFrequency = Math.log(
+          1 + (documents.length - documentFrequency + 0.5) / (documentFrequency + 0.5),
+        )
+        const denominator = frequency + k1 * (1 - b + b * documentTokens.length / averageLength)
+        score += inverseFrequency * (frequency * (k1 + 1)) / denominator * 10
+        if (tokens(tool.name).includes(term)) score += 18
+      }
+
+      return {
+        tool,
+        score,
+        group: catalog.toolToGroup.get(tool.name) ?? tool.name,
+      }
+    })
+    .filter(candidate => candidate.score > 0)
+    .sort((left, right) => right.score - left.score
+      || left.tool.estimatedTokens - right.tool.estimatedTokens
+      || left.tool.name.localeCompare(right.tool.name))
+    .slice(0, limit)
+    .map(({ tool, score, group }) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+      group,
+      score: Math.round(score * 100) / 100,
+      estimatedTokens: tool.estimatedTokens,
     }))
 }
 

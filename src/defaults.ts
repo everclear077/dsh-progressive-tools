@@ -1,13 +1,23 @@
 import type { SkillBindingConfig, ToolGroupConfig } from './types.js'
 
+export const DEFAULT_MODE = 'stable-proxy' as const
 export const DEFAULT_TOOL_NAME = 'tool_search'
+export const DEFAULT_DISPATCH_TOOL_NAME = 'tool_dispatch'
 export const DEFAULT_MAX_RESULTS = 5
 export const DEFAULT_ACTIVATION_GROUP_LIMIT = 1
 export const DEFAULT_MAX_ACTIVE_GROUPS = 3
 export const DEFAULT_MAX_ACTIVE_TOOL_TOKENS = 6_000
 export const DEFAULT_RETENTION_TURNS = 6
 export const DEFAULT_CHARACTERS_PER_TOKEN = 4
-export const DEFAULT_ALWAYS_VISIBLE = ['skill', 'ask_user_question'] as const
+export const DEFAULT_REQUIRE_DISCOVERY = true
+export const DEFAULT_DEFER_TOOL_GUIDANCE = true
+export const DEFAULT_ALWAYS_VISIBLE = [
+  'skill',
+  'ask_user_question',
+  'report',
+  'submit_*',
+  'structured_output*',
+] as const
 export const DEFAULT_SKILL_BINDINGS: readonly SkillBindingConfig[] = []
 
 export const DEFAULT_GROUPS: readonly ToolGroupConfig[] = [

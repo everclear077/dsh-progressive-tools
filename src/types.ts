@@ -17,8 +17,12 @@ export interface SkillBindingConfig {
   readonly groups: readonly string[]
 }
 
+export type ProgressiveMode = 'stable-proxy' | 'dynamic'
+
 export interface ResolvedConfig {
+  readonly mode: ProgressiveMode
   readonly toolName: string
+  readonly dispatchToolName: string
   readonly alwaysVisible: readonly string[]
   readonly groups: readonly ToolGroupConfig[]
   readonly skillBindings: readonly SkillBindingConfig[]
@@ -28,6 +32,8 @@ export interface ResolvedConfig {
   readonly maxActiveToolTokens: number
   readonly retentionTurns: number
   readonly charactersPerToken: number
+  readonly requireDiscovery: boolean
+  readonly deferToolGuidance: boolean
 }
 
 export interface CatalogTool extends ToolSchemaView {
@@ -57,6 +63,28 @@ export interface SearchMatch {
   readonly score: number
   readonly estimatedTokens: number
   readonly tools: readonly string[]
+}
+
+/** One exact deferred definition returned by stable-proxy discovery. */
+export interface DeferredToolMatch extends ToolSchemaView {
+  readonly group: string
+  readonly score: number
+  readonly estimatedTokens: number
+}
+
+export interface ProxySearchResultValue {
+  readonly protocol: 'dsh-progressive-tools/v2'
+  readonly mode: 'stable-proxy'
+  readonly action: 'search' | 'status'
+  readonly query: string
+  readonly matches: readonly DeferredToolMatch[]
+  readonly stableTools: readonly string[]
+  readonly discoveredTools: readonly string[]
+  readonly catalogTools: number
+  readonly estimatedVisibleTokens: number
+  readonly estimatedCatalogTokens: number
+  readonly estimatedSavedTokens: number
+  readonly instruction: string
 }
 
 export interface ActiveGroupState {

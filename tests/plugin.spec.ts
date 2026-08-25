@@ -69,6 +69,10 @@ async function preStep(ctx: Context, agent: Agent, turn: number, step: number): 
   )
 }
 
+async function assemble(ctx: Context, agent: Agent) {
+  return ctx.systemPrompt.assemble({ scope: agent, agent, signal })
+}
+
 async function execute(ctx: Context, agent: Agent, name: string, argumentsValue: unknown, callId: string) {
   return ctx.tools.execute({
     signal,
@@ -80,45 +84,63 @@ async function execute(ctx: Context, agent: Agent, name: string, argumentsValue:
 }
 
 describe('progressive tools plugin', () => {
-  it('keeps eager and agent-owned tools, activates one family, and resets it', async () => {
+  it('uses a minimal byte-stable surface on the first assembly and dispatches discovered tools', async () => {
     const { agent, ctx } = await setup()
-    await preStep(ctx, agent, 1, 1)
+    const policyNames: string[] = []
+    ctx.on('tools/pre-execute', async (execution, next) => {
+      policyNames.push(execution.name)
+      return next()
+    })
+    const first = await assemble(ctx, agent)
 
-    expect(ctx.tools.schemas(agent).map(schema => schema.name).sort()).toEqual([
+    expect(first.tools.map(schema => schema.name).sort()).toEqual([
       'ask_user_question',
       'report',
       'skill',
+      'tool_dispatch',
       'tool_search',
     ])
+    expect(ctx.tools.schemas(agent).map(schema => schema.name)).toContain('browser_open')
     expect((await execute(ctx, agent, 'browser_open', {}, 'hidden')).isError).toBe(true)
 
     const search = await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'search')
     expect(search.isError).toBe(false)
-    await preStep(ctx, agent, 1, 2)
-    expect(ctx.tools.schemas(agent).map(schema => schema.name).sort()).toEqual([
-      'ask_user_question',
-      'browser_click',
-      'browser_open',
-      'report',
-      'skill',
-      'tool_search',
-    ])
-    expect((await execute(ctx, agent, 'browser_open', {}, 'visible')).isError).toBe(false)
+    expect(search.isError ? [] : (search.value as { matches: { name: string }[] }).matches.map(match => match.name))
+      .toContain('browser_open')
 
-    await execute(ctx, agent, 'tool_search', { action: 'reset' }, 'reset')
-    await preStep(ctx, agent, 1, 3)
-    expect(ctx.tools.schemas(agent).map(schema => schema.name)).not.toContain('browser_open')
+    const second = await assemble(ctx, agent)
+    expect(second.tools).toEqual(first.tools)
+    expect(second.sections).toEqual(first.sections)
+
+    policyNames.length = 0
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', {
+      name: 'browser_open',
+      arguments: {},
+    }, 'dispatch')
+    expect(dispatched.isError).toBe(false)
+    expect(dispatched.content).toEqual([{ type: 'text', text: 'ran:browser_open' }])
+    expect(policyNames).toEqual(['tool_dispatch', 'browser_open'])
   })
 
-  it('unwinds its scoped restriction when the plugin unloads', async () => {
+  it('removes its prompt projection and tools when the plugin unloads', async () => {
     const { agent, ctx, plugin } = await setup()
-    await preStep(ctx, agent, 1, 1)
-    expect(ctx.tools.schemas(agent).map(schema => schema.name)).not.toContain('db_query')
+    expect((await assemble(ctx, agent)).tools.map(schema => schema.name)).not.toContain('db_query')
 
     await plugin.dispose()
 
-    expect(ctx.tools.schemas(agent).map(schema => schema.name)).toContain('db_query')
+    expect((await assemble(ctx, agent)).tools.map(schema => schema.name)).toContain('db_query')
     expect(ctx.tools.schemas(agent).map(schema => schema.name)).not.toContain('tool_search')
+    expect(ctx.tools.schemas(agent).map(schema => schema.name)).not.toContain('tool_dispatch')
+  })
+
+  it('keeps dynamic mode compatible while fixing first-assembly and immediate activation timing', async () => {
+    const { agent, ctx } = await setup(undefined, { mode: 'dynamic' })
+    const first = await assemble(ctx, agent)
+    expect(first.tools.map(schema => schema.name)).not.toContain('browser_open')
+
+    await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'dynamic-search')
+    const second = await assemble(ctx, agent)
+    expect(second.tools.map(schema => schema.name)).toContain('browser_open')
   })
 
   it('restores active families from a durable top-level result projection', async () => {
@@ -151,7 +173,7 @@ describe('progressive tools plugin', () => {
     session.append('step/end', { turn: 1, step: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const { agent, ctx } = await setup(session)
+    const { agent, ctx } = await setup(session, { mode: 'dynamic' })
     await preStep(ctx, agent, 2, 1)
 
     expect(ctx.tools.schemas(agent).map(schema => schema.name)).toContain('browser_open')
@@ -181,7 +203,7 @@ describe('progressive tools plugin', () => {
     session.append('step/end', { turn: 1, step: 1 })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const { agent, ctx } = await setup(session)
+    const { agent, ctx } = await setup(session, { mode: 'dynamic' })
     await preStep(ctx, agent, 2, 1)
 
     expect(ctx.tools.schemas(agent).map(schema => schema.name)).toContain('browser_click')
@@ -189,6 +211,7 @@ describe('progressive tools plugin', () => {
 
   it('activates configured families after a successful skill call', async () => {
     const { agent, ctx } = await setup(undefined, {
+      mode: 'dynamic',
       groups: [
         { id: 'browser', include: ['browser_*'] },
         { id: 'database', include: ['db_*'] },
@@ -203,7 +226,7 @@ describe('progressive tools plugin', () => {
   })
 
   it('refreshes active families after dynamic tool registration', async () => {
-    const { agent, ctx } = await setup()
+    const { agent, ctx } = await setup(undefined, { mode: 'dynamic' })
     await preStep(ctx, agent, 1, 1)
     await execute(ctx, agent, 'tool_search', { query: 'browser' }, 'activate')
     await preStep(ctx, agent, 1, 2)
@@ -214,7 +237,7 @@ describe('progressive tools plugin', () => {
   })
 
   it('contains invalid search calls and releases state on agent disposal', async () => {
-    const { agent, ctx } = await setup()
+    const { agent, ctx } = await setup(undefined, { mode: 'dynamic' })
     await preStep(ctx, agent, 1, 1)
 
     expect((await execute(ctx, agent, 'tool_search', {}, 'empty-query')).isError).toBe(true)
@@ -244,6 +267,8 @@ describe('progressive tools plugin', () => {
     expect(() => ProgressiveTools.resolveConfig({ toolName: ' ' })).toThrow(/must not be empty/)
     expect(() => ProgressiveTools.resolveConfig({ groups: [{ id: 'empty', include: [] }] })).toThrow(/include must not be empty/)
     expect(() => ProgressiveTools.resolveConfig({ maxResults: 0 })).toThrow(/safe integer/)
+    expect(() => ProgressiveTools.resolveConfig({ mode: 'unsupported' as 'dynamic' })).toThrow(/mode must/)
+    expect(() => ProgressiveTools.resolveConfig({ toolName: 'same', dispatchToolName: 'same' })).toThrow(/must differ/)
     expect(() => ProgressiveTools.resolveConfig({
       groups: [{ id: 'browser', include: ['browser_*'] }],
       skillBindings: [{ skill: 'x', groups: ['missing'] }],

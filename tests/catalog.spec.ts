@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildCatalog, estimateSchemaTokens, matchingToolNames, searchCatalog } from '../src/catalog.js'
+import {
+  buildCatalog,
+  estimateSchemaTokens,
+  matchingToolNames,
+  searchCatalog,
+  searchTools,
+} from '../src/catalog.js'
 import type { ToolSchemaView } from '../src/types.js'
 
 function schema(name: string, description: string): ToolSchemaView {
@@ -55,6 +61,34 @@ describe('tool catalog', () => {
     expect(searchCatalog(catalog, 'SQL', 3)[0]?.group).toBe('database')
     expect(searchCatalog(catalog, '数据库', 3)[0]?.group).toBe('database')
     expect(searchCatalog(catalog, '帮我检查数据库里的记录', 3)[0]?.group).toBe('database')
+  })
+
+  it('returns exact definitions and searches nested parameter descriptions', () => {
+    const candidates: ToolSchemaView[] = [{
+      name: 'records_lookup',
+      description: 'Read stored objects',
+      parameters: {
+        type: 'object',
+        properties: {
+          customer_id: {
+            type: 'string',
+            description: 'Unique account holder identifier',
+          },
+        },
+      },
+    }, schema('unrelated', 'Perform another task')]
+    const catalog = buildCatalog(candidates, [], 4)
+    const matches = searchTools(catalog, 'account holder', 5)
+
+    expect(matches[0]?.name).toBe('records_lookup')
+    expect(matches[0]?.parameters).toEqual(candidates[0]?.parameters)
+  })
+
+  it('uses multilingual family aliases for exact-tool search', () => {
+    const catalog = buildCatalog(schemas, groups, 4)
+
+    expect(searchTools(catalog, '帮我操作浏览器页面', 2).map(match => match.name))
+      .toEqual(['browser_open', 'browser_click'])
   })
 
   it('excludes eager tools from the managed catalog', () => {
