@@ -86,9 +86,15 @@ contains:
 - configured family ID, description, and aliases.
 
 Ranking combines exact-name and contained-label bonuses with a deterministic
-BM25-style lexical score. Search returns at most `maxResults` exact definitions.
+BM25-style lexical score. CJK text is additionally tokenized into character
+bigrams, so queries without space-delimited words can match definitions and
+family metadata without configured aliases. Search returns at most
+`maxResults` exact definitions; larger `max_results` requests are clamped.
 Those definitions enter the ordinary tool result and therefore extend history
 append-only.
+
+The `status` action lists every deferred family with its member tool names, so
+the model can browse the catalog when a search query has no lexical overlap.
 
 Successful `tools/result` observation commits the returned names to the
 agent's discovered set. Failed or invalid searches do not mutate live state.
@@ -115,7 +121,10 @@ tool_dispatch root execution
 
 Nested contexts and a successful turn-conclusion marker are ferried back to
 the outer result. The outer rendering uses the real tool's finalized content,
-including non-text blocks.
+including non-text blocks. A nested failure is rethrown with the real tool's
+structured error code preserved, and the dispatcher delegates its
+parallel-scheduling classification to the target tool's own declaration, so
+concurrency-safe deferred tools keep overlapping with sibling calls.
 
 ### Routing guard
 
@@ -130,7 +139,9 @@ registers a monotonic guard:
 
 Tokens are registry-minted opaque identities, so a caller cannot manufacture
 the parent capability. Authorized tokens are removed on result and plugin
-cleanup.
+cleanup. The guard prepares the agent's state on demand, so a call that
+arrives before the first assembly or session-start event is still classified
+against the deferred catalog instead of passing through unexamined.
 
 The guard is not an authorization boundary for the underlying capability. It
 enforces presentation-to-dispatch alignment while existing approval, sandbox,
@@ -161,8 +172,10 @@ result metadata. Nested Code Mode calls have no top-level presentation
 metadata, so their standard `tool/code-dispatch` content is folded instead.
 
 The plugin introduces no custom session event vocabulary. On resume it replays
-successful search results and skill bindings, intersects restored names with
-the current catalog, and ignores missing tools.
+successful search results and skill bindings. Discovered names survive
+registry refreshes such as provider reconnects; dispatch validates catalog
+membership at call time, so a stale name fails the individual call without
+losing the rest of the discovery state.
 
 ## Dynamic compatibility mode
 

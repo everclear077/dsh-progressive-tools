@@ -68,7 +68,7 @@ and cancellation still run for the selected real tool.
 ## Install
 
 ```sh
-dsh plugin --profile desktop add github:everclear077/dsh-progressive-tools#v0.2.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.2.0
 ```
 
 Source installs run the package `prepare` script. If pnpm asks for build
@@ -83,7 +83,7 @@ allowBuilds:
 Verify the composed layer before starting the profile:
 
 ```sh
-dsh --profile desktop --dump-config
+dsh --profile web --dump-config
 ```
 
 The dump should contain the `progressive-tools` row contributed by this bundle.
@@ -123,9 +123,10 @@ The next call uses one returned definition:
 }
 ```
 
-`tool_search` also accepts `{"action":"status"}` for catalog and savings
-estimates. Search results are append-only conversation content; they never add
-native definitions to the top-level request.
+`tool_search` also accepts `{"action":"status"}`, which lists every deferred
+family with its member tool names alongside catalog and savings estimates.
+Search results are append-only conversation content; they never add native
+definitions to the top-level request.
 
 ## Configure
 

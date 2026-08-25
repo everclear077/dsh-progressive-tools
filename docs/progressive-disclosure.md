@@ -25,7 +25,6 @@ when needed. The plugin does not duplicate or replace that subsystem.
 
 References:
 
-- [Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview)
 - [Agent Skills specification](https://github.com/agentskills/agentskills/blob/main/docs/specification.mdx)
 - [DSH Skills subsystem](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/skills)
 
@@ -63,8 +62,6 @@ fallback.
 
 References:
 
-- [Tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool)
-- [Tool use with prompt caching](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching)
 - [DSH tool subsystem](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/tools)
 - [DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)
 

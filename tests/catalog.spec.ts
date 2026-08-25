@@ -84,6 +84,17 @@ describe('tool catalog', () => {
     expect(matches[0]?.parameters).toEqual(candidates[0]?.parameters)
   })
 
+  it('matches CJK queries against definitions through bigram tokens', () => {
+    const candidates: ToolSchemaView[] = [
+      schema('report_export', '生成数据报表并导出文件'),
+      schema('unrelated', 'Perform another task'),
+    ]
+    const catalog = buildCatalog(candidates, [], 4)
+
+    expect(searchTools(catalog, '报表数据', 5)[0]?.name).toBe('report_export')
+    expect(searchTools(catalog, '导出报表', 5)[0]?.name).toBe('report_export')
+  })
+
   it('uses multilingual family aliases for exact-tool search', () => {
     const catalog = buildCatalog(schemas, groups, 4)
 

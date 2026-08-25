@@ -72,12 +72,21 @@ export interface DeferredToolMatch extends ToolSchemaView {
   readonly estimatedTokens: number
 }
 
+/** One browsable deferred family listed by the stable-proxy status action. */
+export interface DeferredGroupSummary {
+  readonly id: string
+  readonly description: string
+  readonly tools: readonly string[]
+}
+
 export interface ProxySearchResultValue {
   readonly protocol: 'dsh-progressive-tools/v2'
   readonly mode: 'stable-proxy'
   readonly action: 'search' | 'status'
   readonly query: string
   readonly matches: readonly DeferredToolMatch[]
+  /** Complete deferred family catalog, included by the status action. */
+  readonly groups?: readonly DeferredGroupSummary[]
   readonly stableTools: readonly string[]
   readonly discoveredTools: readonly string[]
   readonly catalogTools: number

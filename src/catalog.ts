@@ -20,9 +20,27 @@ function normalize(value: string): string {
     ?.join(' ') ?? ''
 }
 
+const CJK_RUN_PATTERN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu
+
+/**
+ * CJK text has no space-delimited word boundaries, so whole-phrase tokens
+ * would never overlap between queries and definitions. Character bigrams give
+ * both sides comparable terms without a segmentation dictionary.
+ */
 function tokens(value: string): string[] {
   const normalized = normalize(value)
-  return normalized === '' ? [] : normalized.split(' ')
+  if (normalized === '') return []
+  const result: string[] = []
+  for (const token of normalized.split(' ')) {
+    result.push(token)
+    for (const run of token.match(CJK_RUN_PATTERN) ?? []) {
+      for (let index = 0; index + 1 < run.length; index += 1) {
+        const bigram = run.slice(index, index + 2)
+        if (bigram !== token) result.push(bigram)
+      }
+    }
+  }
+  return result
 }
 
 function wildcard(pattern: string): RegExp {

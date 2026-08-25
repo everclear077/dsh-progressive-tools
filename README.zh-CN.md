@@ -52,7 +52,7 @@ tool_search 结果 ─────┴──► 把命中的精确定义追加到
 ## 安装
 
 ```sh
-dsh plugin --profile desktop add github:everclear077/dsh-progressive-tools#v0.2.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.2.0
 ```
 
 如果 pnpm 要求授权源码构建，把错误信息中给出的精确包名加入对应 profile 的
@@ -66,7 +66,7 @@ allowBuilds:
 安装后检查组合结果：
 
 ```sh
-dsh --profile desktop --dump-config
+dsh --profile web --dump-config
 ```
 
 输出中应包含本 bundle 提供的 `progressive-tools` 配置行。
@@ -104,8 +104,9 @@ dsh --profile desktop --dump-config
 }
 ```
 
-`tool_search` 也支持 `{"action":"status"}`，用于查看目录规模和 token
-估算。搜索结果不会把命中工具加入下一次请求的顶层工具数组。
+`tool_search` 也支持 `{"action":"status"}`，会列出全部延迟工具族及其成员
+工具名，并附带目录规模和 token 估算。搜索结果不会把命中工具加入下一次
+请求的顶层工具数组。
 
 ## 配置
 

@@ -14,7 +14,7 @@ fail loudly.
 | `alwaysVisible` | string[] | essential direct tools | Exact names or `*` patterns kept on the fixed direct surface. |
 | `groups` | group[] | built-in rules | Ordered search and dynamic activation families; first match wins. |
 | `skillBindings` | binding[] | `[]` | Successful Skill calls that discover or activate named families. |
-| `maxResults` | integer | `5` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. |
+| `maxResults` | integer | `5` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. Caller `max_results` values outside `1..maxResults` are clamped, not rejected. |
 | `requireDiscovery` | boolean | `true` | Require search or a Skill binding before stable dispatch. |
 | `deferToolGuidance` | boolean | `true` | Remove exact hidden `tool:<name>` prompt sections. |
 | `activationGroupLimit` | integer | `1` | Dynamic mode: highest-ranked families activated by one search. |

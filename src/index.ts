@@ -9,7 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { CallId, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, renderToolsSdk, renderToolsSdkPy } from '@deepseek-ai/dsh-tools'
 import type {
@@ -53,6 +53,7 @@ import {
 import type { ProgressiveState } from './state.js'
 import type {
   ActiveGroupState,
+  DeferredGroupSummary,
   DeferredToolMatch,
   ProgressiveMode,
   ProxySearchResultValue,
@@ -77,6 +78,7 @@ export {
 export type {
   ActiveGroupState,
   CatalogTool,
+  DeferredGroupSummary,
   DeferredToolMatch,
   ProgressiveMode,
   ProxySearchResultValue,
@@ -619,9 +621,8 @@ export function apply(ctx: Context, input: Config): void {
       schema.name !== 'run_code' && !state.stableNames!.has(schema.name),
     )
     state.progressive.catalog = buildCatalog(managed, config.groups, config.charactersPerToken)
-    for (const name of state.discovered) {
-      if (!state.progressive.catalog.tools.has(name)) state.discovered.delete(name)
-    }
+    // Discovered names deliberately survive registry refreshes (for example a
+    // provider reconnect); dispatch validates catalog membership at call time.
     if (!state.restored) {
       restoreFromEvents(state)
       state.restored = true
@@ -684,6 +685,20 @@ export function apply(ctx: Context, input: Config): void {
     return state
   }
 
+  const clampLimit = (requested: number | undefined): number => {
+    if (requested === undefined) return config.maxResults
+    return Math.min(Math.max(requested, 1), config.maxResults)
+  }
+
+  const deferredGroupSummaries = (state: AgentState): DeferredGroupSummary[] =>
+    [...state.progressive.catalog.groups.values()]
+      .map(group => ({
+        id: group.id,
+        description: group.description.slice(0, 180),
+        tools: group.tools.map(tool => tool.name),
+      }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+
   const stableSearchResult = (
     state: AgentState,
     action: 'search' | 'status',
@@ -704,6 +719,7 @@ export function apply(ctx: Context, input: Config): void {
       action,
       query,
       matches,
+      ...(action === 'status' ? { groups: deferredGroupSummaries(state) } : {}),
       stableTools: [...state.stableNames ?? []].sort(),
       discoveredTools: [...discovered].sort(),
       catalogTools: state.progressive.catalog.tools.size,
@@ -728,11 +744,11 @@ export function apply(ctx: Context, input: Config): void {
         action: {
           type: 'string',
           enum: ['search', 'status'],
-          description: 'Search definitions or inspect the stable catalog. Defaults to search.',
+          description: 'Search definitions, or use status to list every deferred family and catalog estimates. Defaults to search.',
         },
         max_results: {
           type: 'integer',
-          description: `Maximum exact tool definitions to return, up to ${config.maxResults}.`,
+          description: `Maximum exact tool definitions to return; values are clamped between 1 and ${config.maxResults}.`,
         },
       },
       output: {
@@ -740,17 +756,15 @@ export function apply(ctx: Context, input: Config): void {
         render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
         presentationMeta: (_args, value) => proxyStateMeta(value as unknown as ProxySearchResultValue),
       },
+      isConcurrencySafe: () => true,
       async execute(args, exec) {
         if (exec.agent === undefined) throw new Error(`${config.toolName} requires an agent-scoped execution`)
         const state = prepareStableState(exec.agent)
         const action = args.action ?? 'search'
         const query = args.query?.trim() ?? ''
         if (action === 'search' && query === '') throw new Error('query is required when action is search')
-        if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > config.maxResults)) {
-          throw new Error(`max_results must be between 1 and ${config.maxResults}`)
-        }
         const matches = action === 'search'
-          ? searchTools(state.progressive.catalog, query, args.max_results ?? config.maxResults)
+          ? searchTools(state.progressive.catalog, query, clampLimit(args.max_results))
           : []
         return stableSearchResult(
           state,
@@ -785,6 +799,17 @@ export function apply(ctx: Context, input: Config): void {
           tool: args.name,
         }),
       },
+      // Parallel scheduling follows the real tool's own classifier so deferred
+      // tools keep the concurrency they declare; unknown targets stay exclusive.
+      isConcurrencySafe(args) {
+        const definition = ctx.tools.get(args.name)
+        if (definition?.isConcurrencySafe === undefined) return false
+        try {
+          return definition.isConcurrencySafe(args.arguments) === true
+        } catch {
+          return false
+        }
+      },
       async execute(args, exec) {
         if (exec.agent === undefined) throw new Error(`${config.dispatchToolName} requires an agent-scoped execution`)
         const state = prepareStableState(exec.agent)
@@ -813,7 +838,16 @@ export function apply(ctx: Context, input: Config): void {
           })
           for (const context of nested.additionalContexts ?? []) exec.deferContext(context)
           if (nested.concludesTurn === true) exec.concludeTurn()
-          if (nested.isError) throw new Error(`${args.name}: ${nested.error.message}`)
+          if (nested.isError) {
+            // A HarnessError keeps the real tool's routable failure identity
+            // instead of collapsing it into an unstructured message.
+            const failure = new HarnessError(
+              `${args.name}: ${nested.error.message}`,
+              nested.error.info?.code ?? 'DISPATCH_TARGET_ERROR',
+            )
+            if (nested.error.info !== undefined) failure.name = nested.error.info.name
+            throw failure
+          }
           return {
             protocol: 'dsh-progressive-tools/dispatch-v1',
             tool: args.name,
@@ -835,8 +869,9 @@ export function apply(ctx: Context, input: Config): void {
     ctx.tools.guard((execution) => {
       const agent = execution.agent
       if (agent === undefined) return undefined
-      const state = states.get(agent)
-      if (state === undefined) return undefined
+      // Prepare lazily so calls arriving before the first assembly or
+      // session-start event are still classified against the deferred catalog.
+      const state = prepareStableState(agent)
       if (execution.parent !== undefined && authorizedProxyParents.has(execution.parent)) {
         authorizedProxyParents.add(execution.token)
         return undefined
@@ -861,7 +896,7 @@ export function apply(ctx: Context, input: Config): void {
         },
         max_results: {
           type: 'integer',
-          description: `Maximum matches to return, up to ${config.maxResults}.`,
+          description: `Maximum matches to return; values are clamped between 1 and ${config.maxResults}.`,
         },
       },
       output: {
@@ -875,14 +910,11 @@ export function apply(ctx: Context, input: Config): void {
         const action = args.action ?? 'search'
         const query = args.query?.trim() ?? ''
         if (action === 'search' && query === '') throw new Error('query is required when action is search')
-        if (args.max_results !== undefined && (args.max_results < 1 || args.max_results > config.maxResults)) {
-          throw new Error(`max_results must be between 1 and ${config.maxResults}`)
-        }
         return proposeSearch(
           state.progressive,
           action,
           query,
-          args.max_results ?? config.maxResults,
+          clampLimit(args.max_results),
           config,
         ) as InferValue<typeof legacySearchResultSchema>
       },

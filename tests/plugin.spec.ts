@@ -122,6 +122,73 @@ describe('progressive tools plugin', () => {
     expect(policyNames).toEqual(['tool_dispatch', 'browser_open'])
   })
 
+  it('lists the deferred family catalog through the status action', async () => {
+    const { agent, ctx } = await setup()
+    await assemble(ctx, agent)
+
+    const status = await execute(ctx, agent, 'tool_search', { action: 'status' }, 'status')
+    expect(status.isError).toBe(false)
+    const value = status.isError
+      ? undefined
+      : status.value as { groups: { id: string; tools: string[] }[]; matches: unknown[] }
+    expect(value?.matches).toEqual([])
+    expect(value?.groups.map(group => group.id)).toEqual(['browser', 'database'])
+    expect(value?.groups.find(group => group.id === 'browser')?.tools).toEqual([
+      'browser_open',
+      'browser_click',
+    ])
+  })
+
+  it('clamps oversized max_results instead of rejecting the search', async () => {
+    const { agent, ctx } = await setup()
+    await assemble(ctx, agent)
+
+    const search = await execute(ctx, agent, 'tool_search', { query: 'browser', max_results: 99 }, 'clamp')
+    expect(search.isError).toBe(false)
+    const matches = search.isError ? [] : (search.value as { matches: unknown[] }).matches
+    expect(matches.length).toBeLessThanOrEqual(5)
+    expect(matches.length).toBeGreaterThan(0)
+  })
+
+  it('denies direct deferred calls arriving before any assembly or session start', async () => {
+    const { agent, ctx } = await setup()
+
+    const result = await execute(ctx, agent, 'browser_open', {}, 'pre-assembly')
+    expect(result.isError).toBe(true)
+    expect(result.isError ? result.error.message : '').toContain('deferred')
+  })
+
+  it('delegates parallel scheduling of dispatched calls to the target tool', async () => {
+    const { agent, ctx } = await setup()
+    ctx.tools.register(defineTool({
+      name: 'browser_parallel',
+      description: 'browser_parallel fixture',
+      parameters: {},
+      output: {
+        schema: { type: 'string' },
+        render: (_args, value) => [{ type: 'text', text: value }],
+      },
+      isConcurrencySafe: () => true,
+      execute: async () => 'ran:browser_parallel',
+    }))
+    await assemble(ctx, agent)
+
+    expect(ctx.tools.executionMode({
+      signal,
+      callId: CallId('mode-parallel'),
+      name: 'tool_dispatch',
+      arguments: { name: 'browser_parallel', arguments: {} },
+      agent,
+    })).toEqual({ kind: 'parallel' })
+    expect(ctx.tools.executionMode({
+      signal,
+      callId: CallId('mode-exclusive'),
+      name: 'tool_dispatch',
+      arguments: { name: 'browser_open', arguments: {} },
+      agent,
+    })).toEqual({ kind: 'exclusive' })
+  })
+
   it('removes its prompt projection and tools when the plugin unloads', async () => {
     const { agent, ctx, plugin } = await setup()
     expect((await assemble(ctx, agent)).tools.map(schema => schema.name)).not.toContain('db_query')
@@ -241,7 +308,8 @@ describe('progressive tools plugin', () => {
     await preStep(ctx, agent, 1, 1)
 
     expect((await execute(ctx, agent, 'tool_search', {}, 'empty-query')).isError).toBe(true)
-    expect((await execute(ctx, agent, 'tool_search', { query: 'browser', max_results: 99 }, 'bad-limit')).isError).toBe(true)
+    const clamped = await execute(ctx, agent, 'tool_search', { query: 'browser', max_results: 99 }, 'clamped-limit')
+    expect(clamped.isError).toBe(false)
     expect((await ctx.tools.execute({
       signal,
       callId: CallId('unscoped'),

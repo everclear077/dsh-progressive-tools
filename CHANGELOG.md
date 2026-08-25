@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Stable-proxy `status` action lists every deferred family with member tool
+  names, giving the model a catalog-browsing fallback when a search query has
+  no lexical overlap.
+- CJK character-bigram tokenization so queries without space-delimited words
+  match deferred definitions and family metadata without configured aliases.
+- `tool_dispatch` delegates its parallel-scheduling classification to the
+  target tool, so concurrency-safe deferred tools keep overlapping execution.
+
+### Changed
+
+- `max_results` values outside the configured range are clamped instead of
+  rejected, matching upstream tool-search semantics.
+
+### Fixed
+
+- The routing guard prepares per-agent state on demand, closing a
+  direct-call window before the first assembly or session-start event.
+- Discovered-tool state survives registry refreshes such as provider
+  reconnects; dispatch validates catalog membership at call time.
+- Dispatch failures preserve the real tool's structured error code instead of
+  collapsing it into an unstructured message.
+
 ## [0.2.0] - 2026-08-25
 
 ### Added
