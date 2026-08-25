@@ -1,127 +1,188 @@
 # Architecture
 
-## Contract
+## Goals and invariants
 
-The plugin is a standard Cordis function plugin with named `name`, `inject`,
-`Config`, and `apply` exports. The installable package declares `dsh.bundle`
-and contributes one `cordis.patch.yml` layer.
+The default architecture has four invariants:
 
-It depends only on public Harness services and events:
+1. The first AgentLoop request already carries the small surface.
+2. Discovery never changes the top-level tool list or generated SDK.
+3. Deferred calls still traverse the complete DSH execution pipeline.
+4. A caller cannot bypass discovery by naming a hidden tool directly.
 
-- `ctx.tools.register()` for the discovery tool.
-- `ctx.tools.schemas(scope)` for the model-facing schema projection.
-- `agent.ctx.tools.restrict()` for per-agent inherited visibility.
-- `agent/pre-step` for request-boundary reconciliation.
-- `tools/result` for authoritative successful activation and usage updates.
-- `tools/change` for dynamic catalog invalidation.
+The plugin uses only public Harness APIs and extension points:
+
+- `ctx.systemPrompt.section()` for stable discovery guidance;
+- `system-prompt/assemble` for the authoritative request projection;
+- `ctx.tools.register()` for search and dispatch;
+- `ctx.tools.guard()` for monotonic routing enforcement;
+- `ctx.tools.execute()` for nested real-tool execution;
+- `tools/result` for authoritative discovery commits;
+- `tools/change` for in-process catalog invalidation;
+- `agent/session-start` and durable session events for state initialization;
 - `agent/disposed` and Cordis effects for cleanup.
 
-## Request lifecycle
+## The DSH lifecycle boundary
+
+DSH assembles prompt sections and tool schemas before `agent/pre-step`:
 
 ```text
-agent/pre-step
-    │
-    ├── lift this plugin's previous restriction
-    ├── refresh catalog when registry state changed
-    ├── restore durable activation on first use
-    ├── expire inactive families
-    └── install the next scoped allow-list
-             │
-             ▼
-      prompt and tool assembly
-             │
-             ▼
-        tool execution
-             │
-             └── tools/result commits successful state
+claim inbox input
+      │
+      ▼
+systemPrompt.assemble()
+      │
+      ├── collect sections and tools
+      └── system-prompt/assemble waterfall
+                         │
+                         ▼
+                  agent/pre-step
+                         │
+                         ▼
+                    LLM request
 ```
 
-Applying the restriction before delegating through the pre-step waterfall lets
-later listeners observe the reduced view. Prompt assembly happens after the
-waterfall settles, so the same restriction is already active for schema
-projection and execution lookup.
+Version 0.1.0 installed a restriction in `agent/pre-step`, so it could affect
+only the following assembly. Version 0.2.0 performs the authoritative
+projection in `system-prompt/assemble`, after all providers have contributed
+but before AgentLoop stores or sends the request.
 
-## Inherited and agent-owned tools
+`agent/session-start` eagerly initializes the catalog for normal creation and
+resume. The assembly hook remains authoritative and also covers hot reload,
+late registration, and callers that assemble without a normal startup event.
 
-A scoped restriction filters inherited layers but intentionally does not filter
-tools registered by the same agent scope. The public schema projection does not
-expose registration-layer provenance.
+## Stable-proxy mode
 
-Catalog refresh therefore uses a reversible probe:
+### Request projection
 
-1. Lift only this plugin's previous restriction.
-2. Snapshot `schemas(agent)` as the unrestricted externally accessible view.
-3. Temporarily apply `restrict({ allow: [] })`.
-4. Snapshot the remaining names as agent-owned or reserved tools.
-5. Lift the temporary restriction.
-6. Manage only the difference between the two snapshots.
+On the first assembly for one agent, the plugin freezes that session's stable
+name set:
 
-The probe uses the public restriction contract and occurs synchronously inside
-pre-step, before prompt assembly. Restriction-generated `tools/change` events
-are suppressed from this plugin's own invalidation flag; external changes still
-mark every live catalog dirty.
+- `tool_search`;
+- `tool_dispatch`;
+- registered names matching `alwaysVisible`;
+- the reserved `run_code` transport when DSH exposes it.
 
-## Catalog and search
+The complete registry remains visible to in-process code. The assembly
+waterfall filters only the final `PromptAssembly.tools` projection. In Code
+Mode and `both` mode, the `tools:sdk` section is regenerated from the same
+stable names, preserving one coherent presentation.
 
-Configured family rules are ordered and exclusive. Unmatched names receive an
-automatic prefix family when possible or a singleton family otherwise. Search
-normalizes case, camel-case boundaries, underscores, hyphens, Unicode letters,
-and numbers. Ranking rewards exact family aliases, exact tool names, family
-tokens, tool-name tokens, and description or parameter matches in that order.
+`deferToolGuidance` conservatively removes a section only when its name is an
+exact hidden-tool guidance slot (`tool:<name>` or `tool:<name>:...`). General
+guidance and sections that cannot be mapped safely remain untouched.
 
-The complete catalog remains in process memory. Only the discovery schema and
-the compact search result enter request history.
+The stable name set does not grow after first assembly. A later registry change
+refreshes only the searchable catalog, so installing a new deferred tool does
+not silently change an active session's cache prefix.
 
-## Activation state
+### Discovery
 
-Each live Agent has an independent state record:
+The catalog stores detached model-facing definitions in process memory. Search
+operates on individual tools, not whole families. A searchable document
+contains:
 
-- current catalog and tool-to-family index;
-- active family IDs;
-- activation and last-use turns;
-- current restriction disposer;
-- catalog invalidation and restoration flags.
+- tool name and description;
+- nested parameter keys, descriptions, constants, and enums;
+- configured family ID, description, and aliases.
 
-Search execution computes a proposal without mutating live state. The proposal
-is committed only from a successful authoritative `tools/result`. The discovery
-tool does not opt into concurrent execution, so two searches cannot race their
-state proposals.
+Ranking combines exact-name and contained-label bonuses with a deterministic
+BM25-style lexical score. Search returns at most `maxResults` exact definitions.
+Those definitions enter the ordinary tool result and therefore extend history
+append-only.
+
+Successful `tools/result` observation commits the returned names to the
+agent's discovered set. Failed or invalid searches do not mutate live state.
+
+### Dispatch
+
+`tool_dispatch` accepts an exact discovered name and one JSON object of
+arguments. It then calls the ordinary registry:
+
+```text
+tool_dispatch root execution
+      │
+      ├── check catalog membership and discovery state
+      ├── preserve agent, rootCallId, signal, and arguments
+      └── ctx.tools.execute(real tool, parent = dispatcher token)
+                         │
+                         ├── pre-execute / approval
+                         ├── monotonic guards
+                         ├── timeout and retry wrappers
+                         ├── original schema validation and body
+                         ├── post-execute and finalization
+                         └── tools/result
+```
+
+Nested contexts and a successful turn-conclusion marker are ferried back to
+the outer result. The outer rendering uses the real tool's finalized content,
+including non-text blocks.
+
+### Routing guard
+
+Prompt filtering alone does not change registry lookup. Stable mode therefore
+registers a monotonic guard:
+
+- stable direct names are allowed;
+- deferred direct names are denied;
+- a nested execution whose parent token belongs to `tool_dispatch` is allowed;
+- descendants of that authorized nested execution inherit the authorization
+  for the duration of their execution tree.
+
+Tokens are registry-minted opaque identities, so a caller cannot manufacture
+the parent capability. Authorized tokens are removed on result and plugin
+cleanup.
+
+The guard is not an authorization boundary for the underlying capability. It
+enforces presentation-to-dispatch alignment while existing approval, sandbox,
+and policy layers continue to own security decisions.
+
+## Cache behavior
+
+For an unchanged session composition:
+
+```text
+request 1: stable tools + stable system + user history
+request 2: stable tools + stable system + prior history + search result
+request 3: stable tools + stable system + prior history + dispatch result
+```
+
+Only history grows. The tool/system prefix remains byte-identical. The
+AgentLoop integration test captures actual `GenerateOptions` values and asserts
+both the first request surface and post-search equality.
+
+A real composition change can still alter the prefix: changing plugin config,
+removing a stable tool, changing its definition, or replacing another system
+section is outside the discovery invariant.
 
 ## Resume behavior
 
-The discovery tool projects a compact state snapshot through
-`output.presentationMeta`. Top-level calls persist that projection on the
-ordinary `tool/result` event.
+Top-level search calls project a compact `discoveredTools` list through normal
+result metadata. Nested Code Mode calls have no top-level presentation
+metadata, so their standard `tool/code-dispatch` content is folded instead.
 
-Nested Code Mode calls do not carry top-level presentation metadata. Their
-canonical JSON rendering is already recorded by the standard
-`tool/code-dispatch` event, so the same state snapshot is parsed from that
-record during resume. Skill bindings and last-use turns are folded from
-successful top-level results and nested dispatches.
+The plugin introduces no custom session event vocabulary. On resume it replays
+successful search results and skill bindings, intersects restored names with
+the current catalog, and ignores missing tools.
 
-No custom session event type is introduced. Older runtimes and persistence
-readers therefore encounter only the standard event vocabulary.
+## Dynamic compatibility mode
 
-## Dynamic registry changes
+`mode: dynamic` retains the v0.1 family activation design for deployments that
+need provider-native definitions after search. Its lifecycle is corrected:
 
-Any external `tools/change` invalidates all live catalogs because the event is
-deliberately unfiltered and carries no scope identity. On the next pre-step the
-plugin lifts its allow-list, re-reads the view under every other active
-restriction, rebuilds groups, drops unavailable active families, and applies a
-new allow-list.
+- initial restriction is installed at `agent/session-start`;
+- turn expiry is reconciled at `agent/inbox/claimed`;
+- successful search and skill results reinstall the restriction immediately;
+- the assembly waterfall filters the already-collected current assembly and
+  regenerates Code Mode SDK text from the same visible set.
 
-This plugin never widens another layer's restriction. Multiple restrictions
-continue to intersect according to the tool subsystem contract.
+This mode aligns presentation, lookup, and execution through
+`agent.ctx.tools.restrict()`, but changing families changes the tool prefix and
+can reduce cache reuse. It cannot hide tools registered in the exact agent
+scope because scoped restrictions intentionally preserve scope-local tools.
 
 ## Cleanup
 
-The discovery registration and event listeners are ordinary Cordis effects.
-Agent disposal lifts the exact restriction owned by that state. Plugin unload
-iterates every remaining live state, lifts each restriction, and clears the
-state set before its global tool registration disappears.
-
-## Security boundary
-
-Visibility restriction aligns presentation, lookup, and execution but is not a
-security authorization mechanism. Approval services, sandbox policies, and
-monotonic guards remain responsible for security enforcement.
+Tool registrations, the prompt section, assembly listener, guard, and event
+listeners are Cordis-owned effects. Agent disposal removes its state and lifts
+any dynamic restriction. Plugin unload lifts all remaining restrictions and
+clears authorization tokens before its registered tools disappear.

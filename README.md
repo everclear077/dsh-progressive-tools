@@ -1,51 +1,63 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.1.0-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.2.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-Progressive tool discovery and scoped activation for DeepSeek Harness. The
-plugin keeps a small discovery surface visible, stores the complete tool catalog
-outside request context, and exposes relevant tool families only after a search.
+Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
+sends a small, fixed tool surface on the first request, keeps the complete
+catalog in process memory, and executes discovered tools through the ordinary
+Harness pipeline.
 
 [中文文档](./README.zh-CN.md)
 
 ## Why
 
-Every visible tool schema consumes request tokens even when the task never uses
-that capability. A profile with many bundles can therefore spend a large part
-of every request repeating tool names, descriptions, and parameter schemas.
+Every visible tool definition consumes input tokens on every request. Changing
+that definition list later also changes the request prefix and reduces context
+cache reuse. Progressive disclosure needs both properties at once:
 
-This plugin applies progressive disclosure through the official scoped tool
-registry:
+- a small first request;
+- a byte-stable tool and system prefix across later requests.
+
+The default `stable-proxy` mode provides that contract:
 
 ```text
-registered tools
-      │
-      ├── in-memory searchable catalog
-      │
-      └── tool_search + eager tools ──► request
-                    │
-                    └── matching family ──► next request
+complete registry (process memory)
+        │
+        ├── exact searchable definitions
+        │
+        └── fixed request surface
+              ├── tool_search
+              ├── tool_dispatch
+              └── common direct tools
+                       │
+tool_search result ────┴──► append exact matches to conversation history
+                                  │
+                                  └── tool_dispatch ──► normal DSH execution pipeline
 ```
 
-The same scoped view drives schema presentation, lookup, native execution, and
-the generated Code Mode SDK. No prompt-only filtering is used.
+Search changes conversation history, not the top-level tool list. Approval,
+guards, argument validation, timeout wrappers, result policy, deferred context,
+and cancellation still run for the selected real tool.
 
 ## Features
 
-- Per-agent isolation through `agent.ctx.tools.restrict()`.
-- Search and activation in one `tool_search` call.
-- Configurable tool-family rules with automatic prefix and singleton fallbacks.
-- Approximate schema-token budget, LRU eviction, family cap, and turn TTL.
-- Dynamic catalog refresh after tool registration, removal, or restriction
-  changes.
-- Agent-owned tools remain visible, including reporting and structured-output
-  tools created for delegated work.
-- Optional skill-to-family bindings.
-- Resume reconstruction from durable top-level result metadata and nested Code
-  Mode dispatch records.
-- Reversible Cordis effects for clean plugin unload and configuration reload.
+- Minimal tool definitions on the actual first AgentLoop request.
+- Byte-stable native tool list and Code Mode SDK across discovery calls.
+- Exact tool matches with full name, description, and parameter schema.
+- Deterministic BM25-style lexical ranking over names, descriptions, nested
+  parameter descriptions, enums, family metadata, and multilingual aliases.
+- Stable `tool_dispatch` transport with runtime schema validation through the
+  original tool definition.
+- Monotonic guard that rejects direct calls to deferred tools and permits only
+  dispatcher-owned nested execution trees.
+- Support for inherited and agent-scoped tools.
+- Durable discovery reconstruction for top-level and Code Mode search calls.
+- Optional skill-to-family discovery bindings.
+- `dynamic` compatibility mode for deployments that require native definitions
+  after activation.
+- Reversible Cordis effects for unload and configuration reload.
 
 ## Requirements
 
@@ -55,27 +67,17 @@ the generated Code Mode SDK. No prompt-only filtering is used.
 
 ## Install
 
-Install the tagged GitHub release into a profile:
-
 ```sh
-dsh plugin --profile desktop add github:everclear077/dsh-progressive-tools#v0.1.0
+dsh plugin --profile desktop add github:everclear077/dsh-progressive-tools#v0.2.0
 ```
 
-Source installs run the package `prepare` script. With pnpm 10 or newer, add the
-exact package key printed by pnpm to the profile's `pnpm-workspace.yaml` before
-retrying:
+Source installs run the package `prepare` script. If pnpm asks for build
+authorization, add the exact package key it reports to the profile's
+`pnpm-workspace.yaml`:
 
 ```yaml
 allowBuilds:
   dsh-progressive-tools: true
-```
-
-Pinning the tag or a commit keeps the installed source reproducible. A packed
-artifact can be installed without source-build permission:
-
-```sh
-pnpm pack
-dsh plugin --profile desktop add ./dsh-progressive-tools-0.1.0.tgz
 ```
 
 Verify the composed layer before starting the profile:
@@ -84,45 +86,73 @@ Verify the composed layer before starting the profile:
 dsh --profile desktop --dump-config
 ```
 
-The dump should contain a `progressive-tools` row contributed by this bundle.
+The dump should contain the `progressive-tools` row contributed by this bundle.
 
 ## Use
 
-The default visible surface includes:
+The default direct surface contains:
 
-- `tool_search`
-- `skill`, when registered
-- `ask_user_question`, when registered
-- tools owned by the current agent scope
-- reserved presentation transports managed by the Harness
+- `tool_search`;
+- `tool_dispatch`;
+- `skill`, `ask_user_question`, `report`, `submit_*`, and
+  `structured_output*` when registered;
+- reserved Harness presentation transports when the active tool mode needs
+  them.
 
-`tool_search` supports three actions:
+No special wording is required in an ordinary conversation. A stable system
+instruction tells the agent to search before declaring a capability
+unavailable.
+
+Discovery returns exact definitions:
 
 ```json
-{"query":"browser navigation"}
-{"action":"status"}
-{"action":"reset"}
+{
+  "query": "browser navigation",
+  "max_results": 3
+}
 ```
 
-`search` returns ranked matches and activates the highest-ranked family for the
-next step. `status` reports the current catalog and activation estimates.
-`reset` releases every activated family while keeping eager and agent-owned
-tools visible.
+The next call uses one returned definition:
+
+```json
+{
+  "name": "browser_open",
+  "arguments": {
+    "url": "https://example.com"
+  }
+}
+```
+
+`tool_search` also accepts `{"action":"status"}` for catalog and savings
+estimates. Search results are append-only conversation content; they never add
+native definitions to the top-level request.
 
 ## Configure
 
-Bundle configuration can be overridden in the profile's `cordis.patch.yml`,
-which is applied after bundle layers:
+The default configuration is intentionally small:
 
 ```yaml
 - id: progressive-tools
   config:
-    maxActiveToolTokens: 4000
-    maxActiveGroups: 2
-    retentionTurns: 4
+    mode: stable-proxy
+    toolName: tool_search
+    dispatchToolName: tool_dispatch
+    maxResults: 5
+    requireDiscovery: true
+    deferToolGuidance: true
     alwaysVisible:
       - skill
       - ask_user_question
+      - report
+      - submit_*
+      - structured_output*
+```
+
+Family rules improve search without changing the stable request surface:
+
+```yaml
+- id: progressive-tools
+  config:
     groups:
       - id: browser
         description: Browser navigation and page interaction
@@ -132,54 +162,34 @@ which is applied after bundle layers:
         description: Database inspection and queries
         aliases: [database, sql, 数据库]
         include: [db_*, sql_*]
-    skillBindings:
-      - skill: database-operations
-        groups: [database]
 ```
 
-An aggressive low-context profile can use one active family, a short TTL, and a
-smaller estimated schema budget:
+See [configuration](./docs/configuration.md) for every option and the migration
+notes for `dynamic` mode. The [progressive disclosure model](./docs/progressive-disclosure.md)
+maps Skills, exact tool definitions, execution, and provider capability gaps.
 
-```yaml
-- id: progressive-tools
-  config:
-    maxActiveToolTokens: 2000
-    maxActiveGroups: 1
-    retentionTurns: 2
-```
+## Execution and security semantics
 
-See [configuration](./docs/configuration.md) for every option and the built-in
-family rules.
+Stable mode filters the authoritative prompt assembly instead of changing the
+registry view. A direct call to a deferred name is then denied by a monotonic
+tool guard. `tool_dispatch` creates a nested execution with the original agent,
+signal, root call identity, arguments, and real tool name, so normal DSH policy
+continues to apply to that real tool.
 
-## Semantics
+The guard is a routing invariant, not a replacement for approval or sandbox
+policy. Security-sensitive deployments should keep their existing controls
+enabled.
 
-The plugin snapshots the unrestricted view at an `agent/pre-step` boundary,
-separates agent-owned tools from inherited tools, rebuilds the hidden catalog
-when necessary, and installs one scoped allow-list. Activations committed by a
-successful `tool_search` result take effect at the next pre-step.
+## Trade-offs
 
-Token values are deterministic estimates, not provider billing values. The
-default estimate divides compact JSON schema characters by four. It excludes
-eager, reserved, and agent-owned tools because the plugin does not manage those
-schemas.
-
-Tool visibility is a composition mechanism, not an authorization boundary.
-Security-sensitive deployments should keep their normal approval, sandbox, and
-guard policies enabled.
-
-## Known limitations
-
-- The public tool schema does not expose the package that registered a tool.
-  Family ownership is therefore derived from ordered name rules and automatic
-  fallbacks. Deployments with custom naming should define explicit groups.
-- Search is deterministic lexical matching, not semantic embedding search.
-- Requested families larger than the configured token budget are retained for
-  that activation; otherwise the requested capability would remain
-  unusable. The result reports the over-budget estimate.
-- Agent-owned tools cannot be hidden by that agent's own restriction and are
-  intentionally outside the managed budget.
-- Another scoped restriction can further reduce the visible surface. This
-  plugin never widens capabilities removed by another layer.
+- Deferred tools lose provider-native argument grammar at the outer request.
+  Their original schema is validated at dispatch time by DSH.
+- A task may need one discovery call before execution.
+- Search is deterministic lexical ranking, not an embedding service.
+- Search results add only matched definitions to conversation history, but those
+  definitions remain there until normal compaction.
+- A registry or composition change can legitimately alter the next prompt.
+  Discovery alone does not.
 
 ## Development
 
@@ -188,13 +198,15 @@ pnpm install
 pnpm run check
 ```
 
-The test suite covers catalog grouping and ranking, budget and TTL behavior,
-scoped visibility, execution alignment, unload cleanup, and resume restoration.
+The test suite includes a real AgentLoop request test that captures the first
+wire-ready tool array and verifies that discovery leaves both tools and system
+text unchanged.
 
-The implementation follows the official references for
+The implementation follows the public references for
 [architecture](https://deepseek-harness.github.io/deepseek-harness/reference/),
-[tool restrictions](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/tools),
-[progressive disclosure](https://deepseek-harness.github.io/deepseek-harness/reference/cookbook/extension-cookbook),
+[system prompt assembly](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/system-prompt),
+[tool execution](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/tools),
+[skills](https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/skills),
 and [plugin packaging](https://deepseek-harness.github.io/deepseek-harness/develop/basic/publish).
 
 ## License

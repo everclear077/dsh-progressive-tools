@@ -18,7 +18,8 @@ pnpm run check
 
 - Keep runtime behavior on public DeepSeek Harness services and events.
 - Preserve per-agent isolation and reversible Cordis cleanup.
-- Do not add prompt-only visibility filters that diverge from execution lookup.
+- Keep prompt projection and execution routing aligned. Any newly deferred path
+  must be covered by the monotonic routing guard and an end-to-end request test.
 - Add tests for behavior changes, including resume or unload behavior when
   relevant.
 - Update README, configuration reference, architecture notes, and changelog when

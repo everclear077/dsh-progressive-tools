@@ -15,6 +15,8 @@ after the report is reproduced and scoped.
 
 ## Security model
 
-This plugin controls tool visibility through the Harness composition layer. It
-is not an authorization boundary. Deployments must retain appropriate approval,
-sandbox, credential, network, and tool-guard policies.
+This plugin controls tool presentation and routing through the Harness
+composition layer. Its monotonic guard prevents deferred names from bypassing
+the dispatcher, but it is not an authorization boundary for the underlying
+capability. Deployments must retain appropriate approval, sandbox, credential,
+network, and policy controls.
