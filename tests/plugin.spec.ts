@@ -139,6 +139,236 @@ describe('progressive tools plugin', () => {
     ])
   })
 
+  it('discovers whole families from one search so siblings dispatch without re-searching', async () => {
+    const { agent, ctx } = await setup(undefined, { maxResults: 1 })
+    await assemble(ctx, agent)
+
+    const search = await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'family-search')
+    expect(search.isError).toBe(false)
+    const value = search.isError
+      ? undefined
+      : search.value as {
+          matches: { name: string; groupTools: string[] }[]
+          discoveredTools: string[]
+        }
+    expect(value?.matches).toHaveLength(1)
+    expect([...value?.matches[0]?.groupTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+    expect([...value?.discoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+
+    const sibling = value?.matches[0]?.name === 'browser_open' ? 'browser_click' : 'browser_open'
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', { name: sibling, arguments: {} }, 'family-dispatch')
+    expect(dispatched.isError).toBe(false)
+  })
+
+  it('keeps status browse-only by default and recovers through an exact-name search', async () => {
+    expect(ProgressiveTools.resolveConfig({}).statusGrantsDiscovery).toBe(false)
+    const { agent, ctx } = await setup()
+    await assemble(ctx, agent)
+    await execute(ctx, agent, 'tool_search', { action: 'status' }, 'status-browse')
+
+    const denied = await execute(ctx, agent, 'tool_dispatch', { name: 'db_query', arguments: {} }, 'status-denied')
+    expect(denied.isError).toBe(true)
+    expect(denied.isError ? denied.error.message : '').toContain('has not been discovered')
+    expect(denied.isError ? denied.error.message : '').toContain('exact name')
+
+    const exact = await execute(ctx, agent, 'tool_search', { query: 'db_query' }, 'exact-recovery')
+    expect(exact.isError).toBe(false)
+    expect(exact.isError ? [] : (exact.value as { matches: { name: string }[] }).matches.map(match => match.name))
+      .toContain('db_query')
+
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', { name: 'db_query', arguments: {} }, 'exact-dispatch')
+    expect(dispatched.isError).toBe(false)
+  })
+
+  it('lets one status listing unlock dispatch when statusGrantsDiscovery is enabled', async () => {
+    const { agent, ctx } = await setup(undefined, { statusGrantsDiscovery: true })
+    await assemble(ctx, agent)
+
+    const before = await execute(ctx, agent, 'tool_dispatch', { name: 'db_query', arguments: {} }, 'grant-before')
+    expect(before.isError).toBe(true)
+
+    await execute(ctx, agent, 'tool_search', { action: 'status' }, 'grant-status')
+    const after = await execute(ctx, agent, 'tool_dispatch', { name: 'db_query', arguments: {} }, 'grant-after')
+    expect(after.isError).toBe(false)
+
+    const direct = await execute(ctx, agent, 'db_query', {}, 'grant-direct')
+    expect(direct.isError).toBe(true)
+  })
+
+  it('renders per-call discovery increments and keeps the cumulative list out of the text', async () => {
+    const { agent, ctx } = await setup()
+    await assemble(ctx, agent)
+
+    const first = await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'increment-1')
+    expect(first.isError).toBe(false)
+    const firstText = first.isError ? '{}' : (first.content[0] as { type: 'text'; text: string }).text
+    const firstRendered = JSON.parse(firstText) as Record<string, unknown>
+    expect(firstRendered.allDiscoveredTools).toBeUndefined()
+    expect([...firstRendered.discoveredTools as string[]].sort()).toEqual(['browser_click', 'browser_open'])
+    expect(firstRendered.discoveredCount).toBe(2)
+    // The execution value keeps the cumulative list so presentation meta can
+    // carry it for resume even though the rendered text drops it.
+    const firstValue = first.isError ? undefined : first.value as { allDiscoveredTools: string[] }
+    expect([...firstValue?.allDiscoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+
+    const second = await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'increment-2')
+    expect(second.isError).toBe(false)
+    const secondText = second.isError ? '{}' : (second.content[0] as { type: 'text'; text: string }).text
+    const secondRendered = JSON.parse(secondText) as Record<string, unknown>
+    expect(secondRendered.discoveredTools).toEqual([])
+    expect(secondRendered.discoveredCount).toBe(2)
+    const secondValue = second.isError ? undefined : second.value as { allDiscoveredTools: string[] }
+    expect([...secondValue?.allDiscoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+  })
+
+  it('restores cumulative discovery from a stable search result projection', async () => {
+    const session = Session.create(SessionId('stable-restored-meta'))
+    const callId = CallId('stable-restore-search')
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId,
+      name: 'tool_search',
+      arguments: JSON.stringify({ query: 'browser' }),
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: '{}' }],
+        isError: false,
+      }),
+      meta: {
+        protocol: 'dsh-progressive-tools/v2',
+        action: 'search',
+        discoveredTools: ['browser_click', 'browser_open'],
+      },
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const { agent, ctx } = await setup(session)
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', {
+      name: 'browser_click',
+      arguments: {},
+    }, 'stable-restore-dispatch')
+    expect(dispatched.isError).toBe(false)
+  })
+
+  it('unions incremental discovery records across replayed events', async () => {
+    const session = Session.create(SessionId('stable-restored-increments'))
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    for (const [index, names] of [['browser_open'], ['db_query']].entries()) {
+      const callId = CallId(`increment-replay-${index}`)
+      session.append('tool/call', {
+        turn: 1,
+        step: 1,
+        callId,
+        name: 'tool_search',
+        arguments: JSON.stringify({ query: names[0] }),
+      })
+      session.append('tool/result', {
+        turn: 1,
+        step: 1,
+        message: createToolResultMessage({
+          callId,
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              protocol: 'dsh-progressive-tools/v2',
+              action: 'search',
+              discoveredTools: names,
+            }),
+          }],
+          isError: false,
+        }),
+      }, { surfaceOp: 'append' })
+    }
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const { agent, ctx } = await setup(session)
+    for (const name of ['browser_open', 'db_query']) {
+      const dispatched = await execute(ctx, agent, 'tool_dispatch', {
+        name,
+        arguments: {},
+      }, `increment-dispatch-${name}`)
+      expect(dispatched.isError).toBe(false)
+    }
+  })
+
+  it('restores the status listing grant from replayed events', async () => {
+    const session = Session.create(SessionId('stable-restored-status'))
+    const callId = CallId('stable-restore-status')
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('tool/call', {
+      turn: 1,
+      step: 1,
+      callId,
+      name: 'tool_search',
+      arguments: JSON.stringify({ action: 'status' }),
+    })
+    session.append('tool/result', {
+      turn: 1,
+      step: 1,
+      message: createToolResultMessage({
+        callId,
+        content: [{ type: 'text', text: '{}' }],
+        isError: false,
+      }),
+      meta: {
+        protocol: 'dsh-progressive-tools/v2',
+        action: 'status',
+        discoveredTools: [],
+      },
+    }, { surfaceOp: 'append' })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const { agent, ctx } = await setup(session, { statusGrantsDiscovery: true })
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', {
+      name: 'db_query',
+      arguments: {},
+    }, 'status-restore-dispatch')
+    expect(dispatched.isError).toBe(false)
+  })
+
+  it('restores discovery from a nested stable dispatch result', async () => {
+    const session = Session.create(SessionId('stable-restored-nested'))
+    session.append('turn/start', { turn: 1 })
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('tool/code-dispatch', {
+      rootCallId: CallId('stable-root'),
+      parentCallId: CallId('stable-parent'),
+      subCallId: CallId('stable-nested-search'),
+      name: 'tool_search',
+      arguments: { query: 'browser' },
+      isError: false,
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          protocol: 'dsh-progressive-tools/v2',
+          action: 'search',
+          discoveredTools: ['browser_click'],
+        }),
+      }],
+    })
+    session.append('step/end', { turn: 1, step: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+    const { agent, ctx } = await setup(session)
+    const dispatched = await execute(ctx, agent, 'tool_dispatch', {
+      name: 'browser_click',
+      arguments: {},
+    }, 'stable-nested-dispatch')
+    expect(dispatched.isError).toBe(false)
+  })
+
   it('clamps oversized max_results instead of rejecting the search', async () => {
     const { agent, ctx } = await setup()
     await assemble(ctx, agent)

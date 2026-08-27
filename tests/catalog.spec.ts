@@ -6,6 +6,7 @@ import {
   searchCatalog,
   searchTools,
 } from '../src/catalog.js'
+import { DEFAULT_GROUPS } from '../src/defaults.js'
 import type { ToolSchemaView } from '../src/types.js'
 
 function schema(name: string, description: string): ToolSchemaView {
@@ -127,6 +128,51 @@ describe('tool catalog', () => {
     expect(catalog.groups.has('db')).toBe(true)
     expect(catalog.groups.has('auto:db')).toBe(true)
     expect(catalog.groups.get('auto:db')?.tools).toHaveLength(2)
+  })
+
+  it('never merges unrelated tools on generic verb prefixes', () => {
+    const catalog = buildCatalog([
+      schema('get_goal', 'Read the current goal'),
+      schema('get_image_generation_task', 'Read an image generation task'),
+      schema('list_jobs', 'List background jobs'),
+      schema('list_connections', 'List database connections'),
+    ], [], 4)
+
+    expect(catalog.groups.has('get')).toBe(false)
+    expect(catalog.groups.has('list')).toBe(false)
+    expect(catalog.toolToGroup.get('get_goal')).toBe('get_goal')
+    expect(catalog.toolToGroup.get('get_image_generation_task')).toBe('get_image_generation_task')
+  })
+
+  it('assigns image generation task helpers to the built-in image family', () => {
+    const catalog = buildCatalog([
+      schema('generate_image', 'Generate an image'),
+      schema('edit_image', 'Edit an image'),
+      schema('get_image_generation_task', 'Read an image generation task'),
+      schema('cancel_image_generation_task', 'Cancel an image generation task'),
+      schema('get_goal', 'Read the current goal'),
+    ], DEFAULT_GROUPS, 4)
+
+    const family = catalog.groups.get('image-generation')?.tools.map(tool => tool.name).sort()
+    expect(family).toEqual([
+      'cancel_image_generation_task',
+      'edit_image',
+      'generate_image',
+      'get_image_generation_task',
+    ])
+    expect(catalog.toolToGroup.get('get_goal')).toBe('get_goal')
+  })
+
+  it('returns every family member name alongside each exact match', () => {
+    const catalog = buildCatalog(schemas, groups, 4)
+    const matches = searchTools(catalog, 'browser', 1)
+
+    expect(matches).toHaveLength(1)
+    expect([...matches[0]?.groupTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+
+    const singleton = searchTools(catalog, 'unique operation', 5)
+      .find(match => match.name === 'standalone')
+    expect(singleton?.groupTools).toEqual(['standalone'])
   })
 
   it('uses the configured character ratio for deterministic estimates', () => {

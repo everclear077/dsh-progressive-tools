@@ -39,7 +39,10 @@ Stable proxy mode implements an analogous three-level tool path:
 | Execution | Original tool body and result | `tool_dispatch` nested call |
 
 The complete catalog and real executors stay in process memory. Only exact
-matches enter conversation history.
+matches enter conversation history, but each match also names every sibling in
+its family, so one search opens a plugin's whole dispatchable surface. The
+`status` action browses the complete family catalog when no lexical query
+fits; by default it informs without unlocking dispatch.
 
 ## Native deferred tools versus stable proxy
 

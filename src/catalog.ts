@@ -95,8 +95,19 @@ function createGroup(
   }
 }
 
+/**
+ * Prefixes shared by unrelated tools across plugins. Merging on them would
+ * bundle strangers (get_goal with get_image_generation_task), so these tools
+ * stay single-tool groups instead.
+ */
+const GENERIC_AUTO_PREFIXES: ReadonlySet<string> = new Set([
+  'get', 'set', 'list', 'create', 'delete', 'update', 'add', 'remove',
+  'cancel', 'run', 'start', 'stop', 'send', 'read', 'write', 'new', 'check',
+])
+
 function automaticGroupId(name: string, prefixCounts: ReadonlyMap<string, number>): string {
   const prefix = name.includes('_') ? name.slice(0, name.indexOf('_')) : name
+  if (GENERIC_AUTO_PREFIXES.has(prefix)) return name
   return (prefixCounts.get(prefix) ?? 0) >= 2 ? prefix : name
 }
 
@@ -278,6 +289,7 @@ export function searchTools(catalog: ToolCatalog, query: string, limit: number):
       group,
       score: Math.round(score * 100) / 100,
       estimatedTokens: tool.estimatedTokens,
+      groupTools: catalog.groups.get(group)?.tools.map(member => member.name) ?? [tool.name],
     }))
 }
 

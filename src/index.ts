@@ -39,6 +39,7 @@ import {
   DEFAULT_REQUIRE_DISCOVERY,
   DEFAULT_RETENTION_TURNS,
   DEFAULT_SKILL_BINDINGS,
+  DEFAULT_STATUS_GRANTS_DISCOVERY,
   DEFAULT_TOOL_NAME,
 } from './defaults.js'
 import {
@@ -123,6 +124,8 @@ export interface Config {
   readonly charactersPerToken?: number
   /** Require a successful search or skill binding before proxy dispatch. */
   readonly requireDiscovery?: boolean
+  /** Let one status listing make every cataloged name dispatchable. */
+  readonly statusGrantsDiscovery?: boolean
   /** Remove exact hidden tool guidance sections from the stable prompt. */
   readonly deferToolGuidance?: boolean
 }
@@ -160,6 +163,7 @@ export const Config = z.object({
   retentionTurns: z.number().default(DEFAULT_RETENTION_TURNS),
   charactersPerToken: z.number().default(DEFAULT_CHARACTERS_PER_TOKEN),
   requireDiscovery: z.boolean().default(DEFAULT_REQUIRE_DISCOVERY),
+  statusGrantsDiscovery: z.boolean().default(DEFAULT_STATUS_GRANTS_DISCOVERY),
   deferToolGuidance: z.boolean().default(DEFAULT_DEFER_TOOL_GUIDANCE),
 }) as unknown as z<Config>
 
@@ -256,6 +260,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
       1,
     ),
     requireDiscovery: config.requireDiscovery ?? DEFAULT_REQUIRE_DISCOVERY,
+    statusGrantsDiscovery: config.statusGrantsDiscovery ?? DEFAULT_STATUS_GRANTS_DISCOVERY,
     deferToolGuidance: config.deferToolGuidance ?? DEFAULT_DEFER_TOOL_GUIDANCE,
   }
 }
@@ -264,6 +269,8 @@ interface AgentState {
   readonly agent: Agent
   readonly progressive: ProgressiveState
   readonly discovered: Set<string>
+  /** A status call listed the full catalog; grants dispatch only when configured. */
+  catalogListed: boolean
   restriction: (() => void) | undefined
   restrictableNames: Set<string>
   eagerNames: Set<string>
@@ -325,6 +332,12 @@ function snapshotFromSearchValue(value: unknown): StateSnapshot | undefined {
 
 function discoveredFromSearchValue(value: unknown): string[] | undefined {
   if (!isRecord(value) || value.protocol !== 'dsh-progressive-tools/v2') return undefined
+  // Cumulative lists (older results, presentation meta) take priority; newer
+  // rendered results carry per-call increments that union across events.
+  if (Array.isArray(value.allDiscoveredTools)
+    && value.allDiscoveredTools.every(name => typeof name === 'string')) {
+    return value.allDiscoveredTools as string[]
+  }
   if (Array.isArray(value.discoveredTools)
     && value.discoveredTools.every(name => typeof name === 'string')) {
     return value.discoveredTools as string[]
@@ -334,6 +347,12 @@ function discoveredFromSearchValue(value: unknown): string[] | undefined {
     .map(match => isRecord(match) && typeof match.name === 'string' ? match.name : undefined)
     .filter((name): name is string => name !== undefined)
   return names
+}
+
+function statusFromSearchValue(value: unknown): boolean {
+  return isRecord(value)
+    && value.protocol === 'dsh-progressive-tools/v2'
+    && value.action === 'status'
 }
 
 function textContentValue(content: unknown): unknown {
@@ -385,9 +404,13 @@ function legacyStateMeta(value: SearchResultValue): JsonValue {
 }
 
 function proxyStateMeta(value: ProxySearchResultValue): JsonValue {
+  // Presentation meta never reaches the model, so it can afford the cumulative
+  // list: resume restores the full discovery state from the latest entry even
+  // when older events were compacted away.
   return {
     protocol: value.protocol,
-    discoveredTools: [...value.discoveredTools],
+    action: value.action,
+    discoveredTools: [...value.allDiscoveredTools],
   }
 }
 
@@ -516,6 +539,7 @@ export function apply(ctx: Context, input: Config): void {
       agent,
       progressive: createProgressiveState(buildCatalog([], config.groups, config.charactersPerToken), latestTurn(agent)),
       discovered: new Set(),
+      catalogListed: false,
       restriction: undefined,
       restrictableNames: new Set(),
       eagerNames: new Set(),
@@ -564,14 +588,13 @@ export function apply(ctx: Context, input: Config): void {
         if (call === undefined) continue
         if (call.name === config.toolName) {
           if (config.mode === 'stable-proxy') {
-            const fromMeta = isRecord(event.data.meta)
-              ? discoveredFromSearchValue({
-                  protocol: event.data.meta.protocol,
-                  discoveredTools: event.data.meta.discoveredTools,
-                })
-              : undefined
+            const meta = isRecord(event.data.meta) ? event.data.meta : undefined
+            const fromMeta = meta === undefined ? undefined : discoveredFromSearchValue(meta)
             for (const name of fromMeta ?? discoveredFromSearchValue(result.value) ?? []) {
               state.discovered.add(name)
+            }
+            if (statusFromSearchValue(meta) || statusFromSearchValue(result.value)) {
+              state.catalogListed = true
             }
           } else {
             const snapshot = isRecord(event.data.meta)
@@ -596,6 +619,7 @@ export function apply(ctx: Context, input: Config): void {
         const value = textContentValue(nested.content)
         if (config.mode === 'stable-proxy') {
           for (const name of discoveredFromSearchValue(value) ?? []) state.discovered.add(name)
+          if (statusFromSearchValue(value)) state.catalogListed = true
         } else {
           const snapshot = snapshotFromSearchValue(value)
           if (snapshot !== undefined) restoreSnapshot(state.progressive, snapshot)
@@ -705,8 +729,17 @@ export function apply(ctx: Context, input: Config): void {
     query: string,
     matches: readonly DeferredToolMatch[],
   ): ProxySearchResultValue => {
-    const discovered = new Set(state.discovered)
-    for (const match of matches) discovered.add(match.name)
+    // A search discovers the matched tools and their whole families, so one
+    // query opens a plugin's full surface instead of only its top-ranked slice.
+    const newlyDiscovered = new Set<string>()
+    for (const match of matches) {
+      if (!state.discovered.has(match.name)) newlyDiscovered.add(match.name)
+      for (const sibling of match.groupTools) {
+        if (!state.discovered.has(sibling)) newlyDiscovered.add(sibling)
+      }
+    }
+    const allDiscovered = new Set(state.discovered)
+    for (const name of newlyDiscovered) allDiscovered.add(name)
     const stableSchemas = cloneSchemas(state.agent.ctx.tools.schemas(state.agent))
       .filter(schema => state.stableNames?.has(schema.name))
     const estimatedVisibleTokens = stableSchemas.reduce(
@@ -721,7 +754,9 @@ export function apply(ctx: Context, input: Config): void {
       matches,
       ...(action === 'status' ? { groups: deferredGroupSummaries(state) } : {}),
       stableTools: [...state.stableNames ?? []].sort(),
-      discoveredTools: [...discovered].sort(),
+      discoveredTools: [...newlyDiscovered].sort(),
+      discoveredCount: allDiscovered.size,
+      allDiscoveredTools: [...allDiscovered].sort(),
       catalogTools: state.progressive.catalog.tools.size,
       estimatedVisibleTokens,
       estimatedCatalogTokens: state.progressive.catalog.totalEstimatedTokens,
@@ -744,7 +779,7 @@ export function apply(ctx: Context, input: Config): void {
         action: {
           type: 'string',
           enum: ['search', 'status'],
-          description: 'Search definitions, or use status to list every deferred family and catalog estimates. Defaults to search.',
+          description: `Search definitions, or use status to list every deferred family and catalog estimates. Defaults to search.${config.statusGrantsDiscovery ? ' Status also makes every listed name dispatchable.' : ''}`,
         },
         max_results: {
           type: 'integer',
@@ -753,7 +788,13 @@ export function apply(ctx: Context, input: Config): void {
       },
       output: {
         schema: proxyResultSchema,
-        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+        render: (_args, value) => {
+          // The cumulative list lives in presentation meta only; rendering it
+          // would leak the ever-growing discovery table back into the prompt.
+          const rendered = { ...(value as Record<string, unknown>) }
+          delete rendered.allDiscoveredTools
+          return [{ type: 'text', text: JSON.stringify(rendered) }]
+        },
         presentationMeta: (_args, value) => proxyStateMeta(value as unknown as ProxySearchResultValue),
       },
       isConcurrencySafe: () => true,
@@ -819,8 +860,10 @@ export function apply(ctx: Context, input: Config): void {
           }
           throw new Error(`tool ${JSON.stringify(args.name)} is not in the deferred catalog`)
         }
-        if (config.requireDiscovery && !state.discovered.has(args.name)) {
-          throw new Error(`tool ${JSON.stringify(args.name)} has not been discovered; call ${config.toolName} first`)
+        if (config.requireDiscovery
+          && !state.discovered.has(args.name)
+          && !(config.statusGrantsDiscovery && state.catalogListed)) {
+          throw new Error(`tool ${JSON.stringify(args.name)} has not been discovered; call ${config.toolName} with the exact name ${JSON.stringify(args.name)} as the query to load its schema, then dispatch`)
         }
         const definition = exec.agent.ctx.tools.get(args.name, exec.agent)
         if (definition === undefined) throw new Error(`tool ${JSON.stringify(args.name)} is no longer registered`)
@@ -863,7 +906,7 @@ export function apply(ctx: Context, input: Config): void {
     ctx.systemPrompt.section({
       name: 'progressive-tools:discovery',
       order: 140,
-      text: `Only the common tools are listed initially. When the task needs another capability, call ${config.toolName}; then call ${config.dispatchToolName} with an exact returned name and schema-valid arguments. Do not claim a capability is unavailable before searching.`,
+      text: `Only the common tools are listed initially. When the task needs another capability, call ${config.toolName}; then call ${config.dispatchToolName} with an exact returned name and schema-valid arguments. Tool names mentioned elsewhere in this prompt but not listed as callable must be discovered the same way before dispatch. Use action "status" to browse the complete deferred catalog. Do not claim a capability is unavailable before searching.`,
     })
 
     ctx.tools.guard((execution) => {
@@ -986,6 +1029,7 @@ export function apply(ctx: Context, input: Config): void {
       if (config.mode === 'stable-proxy') {
         const value = proxyResultFromExecution(result)
         for (const name of value?.discoveredTools ?? []) state.discovered.add(name)
+        if (value?.action === 'status') state.catalogListed = true
       } else {
         const value = legacyResultFromExecution(result)
         if (value !== undefined) restoreSnapshot(state.progressive, value.state)
