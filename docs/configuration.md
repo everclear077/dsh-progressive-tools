@@ -15,7 +15,8 @@ fail loudly.
 | `groups` | group[] | built-in rules | Ordered search and dynamic activation families; first match wins. |
 | `skillBindings` | binding[] | `[]` | Successful Skill calls that discover or activate named families. |
 | `maxResults` | integer | `5` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. Caller `max_results` values outside `1..maxResults` are clamped, not rejected. |
-| `requireDiscovery` | boolean | `true` | Require search or a Skill binding before stable dispatch. |
+| `requireDiscovery` | boolean | `true` | Require a search hit, a family-wide discovery, or a Skill binding before stable dispatch. |
+| `statusGrantsDiscovery` | boolean | `false` | Let one `status` listing make every cataloged name dispatchable. Off by default so dispatch always follows a seen schema. |
 | `deferToolGuidance` | boolean | `true` | Remove exact hidden `tool:<name>` prompt sections. |
 | `activationGroupLimit` | integer | `1` | Dynamic mode: highest-ranked families activated by one search. |
 | `maxActiveGroups` | integer | `3` | Dynamic mode: maximum retained active families. |
@@ -75,10 +76,17 @@ groups:
 Rules are evaluated in list order. A tool belongs to at most one configured
 family. Unmatched tools are grouped by the first underscore-delimited prefix
 when at least two share it; otherwise each tool receives a singleton family.
+Generic verb prefixes (`get`, `set`, `list`, `create`, `delete`, `update`,
+`add`, `remove`, `cancel`, `run`, `start`, `stop`, `send`, `read`, `write`,
+`new`, `check`) never merge, because unrelated plugins routinely share them;
+such tools stay singleton families unless a configured rule claims them.
 
-In stable mode, family metadata improves exact-tool search but the result
-contains only the highest-ranked individual definitions. In dynamic mode, the
-highest-ranked whole family becomes natively visible.
+In stable mode, family metadata improves exact-tool search, the result
+contains the highest-ranked individual definitions, and each match lists every
+member name of its family so siblings become dispatchable from one query. In
+dynamic mode, the highest-ranked whole family becomes natively visible.
+Because family membership now also widens discovery, a wrong rule no longer
+just skews ranking — it unlocks unrelated names. Keep custom rules precise.
 
 The built-in order covers browser, vision, image generation, filesystem,
 terminal, web, database, remote operations, memory, workbench, teams,
@@ -105,13 +113,22 @@ families under its normal cap, budget, and LRU rules.
 
 ## Discovery gate
 
-With `requireDiscovery: true`, `tool_dispatch` accepts only names returned by a
-successful search or introduced through a Skill binding. This catches guessed
-or stale tool names before nested execution.
+With `requireDiscovery: true`, `tool_dispatch` accepts names that were matched
+by a successful search, listed as a family sibling of a match, or introduced
+through a Skill binding. This catches guessed or stale tool names before
+nested execution.
 
-Set it to `false` only when another trusted catalog supplies exact names and
-schemas. Direct calls to deferred names remain denied; they must still pass
-through `tool_dispatch`.
+A `status` listing is browse-only by default: it shows every family and member
+name but does not unlock dispatch, so the model must load a schema before
+calling. The rejection message points to the deterministic recovery — search
+the exact name once (exact matches always rank first) and dispatch. Set
+`statusGrantsDiscovery: true` to let one status call unlock the whole catalog;
+this trades away the seen-schema guarantee, so reserve it for deployments with
+approval layers or read-only tool surfaces.
+
+Set `requireDiscovery: false` only when another trusted catalog supplies exact
+names and schemas. Direct calls to deferred names remain denied; they must
+still pass through `tool_dispatch`.
 
 ## Guidance deferral
 
@@ -127,6 +144,22 @@ It does not guess package ownership or delete general sections. This avoids
 silently removing unrelated policy text. A tool package that registers one
 shared family section should move large operational instructions into a Skill
 or keep the section always visible.
+
+## Onboarding an existing plugin ecosystem
+
+Three configuration moves cover most friction when this plugin fronts an
+already-installed tool ecosystem:
+
+1. Add high-frequency small tools to `alwaysVisible`. Anything the model calls
+   nearly every turn (todo updates, reporting) should not pay the
+   search-then-dispatch round trip.
+2. Bind plugin-shipped Skills with `skillBindings`. Loading a Skill should make
+   its tools dispatchable in the same turn; without a binding the model still
+   needs one search after the Skill call.
+3. Write explicit `groups` rules, with multilingual aliases, for packages whose
+   tool names do not follow common prefixes. This fixes automatic-group
+   scatter, improves family search recall, and keeps family-wide discovery
+   from unlocking strangers.
 
 ## Token estimates
 
@@ -162,6 +195,7 @@ Prefer stable mode when context-cache reuse is important.
     dispatchToolName: tool_dispatch
     maxResults: 5
     requireDiscovery: true
+    statusGrantsDiscovery: false
     deferToolGuidance: true
     alwaysVisible: [skill, ask_user_question, report, submit_*, structured_output*]
     groups:

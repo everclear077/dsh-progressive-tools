@@ -95,5 +95,25 @@ describe('AgentLoop request integration', () => {
     expect(requests[1]?.tools).toEqual(requests[0]?.tools)
     expect(requests[1]?.system).toBe(requests[0]?.system)
 
+    // A status listing and the family-wide discovery it precedes must not
+    // write back into the stable prefix either.
+    const status = await ctx.tools.execute({
+      signal,
+      callId: CallId('integration-status'),
+      name: 'tool_search',
+      arguments: { action: 'status' },
+      agent,
+    })
+    expect(status.isError).toBe(false)
+
+    agent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'continue again' }],
+      source: { kind: 'user' },
+    }))
+    await agent.whenIdle()
+
+    expect(requests).toHaveLength(3)
+    expect(requests[2]?.tools).toEqual(requests[0]?.tools)
+    expect(requests[2]?.system).toBe(requests[0]?.system)
   })
 })

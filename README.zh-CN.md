@@ -39,6 +39,12 @@ tool_search 结果 ─────┴──► 把命中的精确定义追加到
 - 真实 AgentLoop 第一次请求即发送最小工具定义。
 - 搜索前后原生工具数组和 Code Mode SDK 保持稳定。
 - 返回精确工具名称、完整描述和参数 schema，不再激活整个工具族。
+- 工具族级发现：每条命中同时列出所属工具族的全部成员名，一次搜索即可
+  铺开一个插件的完整可分发工具面。
+- `status` 动作可浏览完整目录；可选 `statusGrantsDiscovery` 供受信任部署
+  一次性解锁全部名字。
+- 对话体量有界增长：搜索结果只记录本次新增的发现名单，恢复所需的累积
+  状态走呈现元数据，不占对话 token。
 - 确定性的 BM25 风格词法排序，覆盖工具名、描述、嵌套参数说明、枚举、
   工具族元数据及多语言别名。
 - `tool_dispatch` 使用原始工具定义进行运行时参数校验和执行。
@@ -52,7 +58,7 @@ tool_search 结果 ─────┴──► 把命中的精确定义追加到
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.2.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.3.0
 ```
 
 如果 pnpm 要求授权源码构建，把错误信息中给出的精确包名加入对应 profile 的
@@ -104,8 +110,14 @@ dsh --profile web --dump-config
 }
 ```
 
+每条命中还会列出所属工具族的全部成员名，整个工具族在同一次搜索后即可
+分发——没进入 Top-N 的兄弟工具可以直接按名字分发，或用一次精确名搜索
+先取回它的 schema。
+
 `tool_search` 也支持 `{"action":"status"}`，会列出全部延迟工具族及其成员
-工具名，并附带目录规模和 token 估算。搜索结果不会把命中工具加入下一次
+工具名，并附带目录规模和 token 估算。status 默认只用于浏览：分发未见过
+的名字仍需一次精确名搜索，拒绝信息会明确指路。需要即时放行的部署可以
+开启 `statusGrantsDiscovery: true`。搜索结果不会把命中工具加入下一次
 请求的顶层工具数组。
 
 ## 配置
@@ -120,6 +132,7 @@ dsh --profile web --dump-config
     dispatchToolName: tool_dispatch
     maxResults: 5
     requireDiscovery: true
+    statusGrantsDiscovery: false
     deferToolGuidance: true
     alwaysVisible:
       - skill
@@ -145,7 +158,9 @@ dsh --profile web --dump-config
         include: [db_*, sql_*]
 ```
 
-完整字段和 `dynamic` 迁移说明见[配置参考](./docs/configuration.md)。
+完整字段、既有插件生态的接入清单（高频工具配 `alwaysVisible`、带 Skill
+的插件配 `skillBindings`、命名不规范的插件写显式 `groups` 规则）以及
+`dynamic` 迁移说明见[配置参考](./docs/configuration.md)。
 [渐进式披露模型](./docs/progressive-disclosure.md)进一步说明 Skills、工具定义、
 执行层和供应方能力边界之间的关系。
 
@@ -163,6 +178,8 @@ dsh --profile web --dump-config
 - 延迟工具不会出现在顶层请求的原生参数 grammar 中；DSH 会在分发时使用原始
   schema 校验。
 - 一项任务可能先增加一次搜索调用。
+- 同族兄弟工具在 schema 展示之前即可分发；执行管线仍会校验每次调用，但
+  参数复杂或有副作用的兄弟工具建议先用一次精确名搜索取回 schema。
 - 搜索是确定性词法排序，不依赖向量服务。
 - 只有命中的定义进入对话，但会一直保留到常规 compaction。
 - 工具注册或插件组合发生真实变化时，下一次系统前缀仍可能变化；普通搜索

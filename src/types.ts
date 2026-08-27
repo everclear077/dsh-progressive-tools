@@ -33,6 +33,7 @@ export interface ResolvedConfig {
   readonly retentionTurns: number
   readonly charactersPerToken: number
   readonly requireDiscovery: boolean
+  readonly statusGrantsDiscovery: boolean
   readonly deferToolGuidance: boolean
 }
 
@@ -70,6 +71,8 @@ export interface DeferredToolMatch extends ToolSchemaView {
   readonly group: string
   readonly score: number
   readonly estimatedTokens: number
+  /** Every member name of the owning family, so siblings surface in one search. */
+  readonly groupTools: readonly string[]
 }
 
 /** One browsable deferred family listed by the stable-proxy status action. */
@@ -88,7 +91,15 @@ export interface ProxySearchResultValue {
   /** Complete deferred family catalog, included by the status action. */
   readonly groups?: readonly DeferredGroupSummary[]
   readonly stableTools: readonly string[]
+  /** Names newly discovered by this call; earlier discoveries are not repeated. */
   readonly discoveredTools: readonly string[]
+  /** Cumulative number of discovered deferred tools. */
+  readonly discoveredCount: number
+  /**
+   * Cumulative discovered names. Carried in presentation metadata for resume
+   * and stripped from the rendered text to keep conversation growth bounded.
+   */
+  readonly allDiscoveredTools: readonly string[]
   readonly catalogTools: number
   readonly estimatedVisibleTokens: number
   readonly estimatedCatalogTokens: number

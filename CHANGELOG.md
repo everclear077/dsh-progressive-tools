@@ -6,18 +6,45 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-25
+
+Upgrading changes the stable discovery prompt text, so every deployment pays
+one context-cache cold start on the first request after the upgrade; the
+prefix is byte-stable again from the second request onward.
+
 ### Added
 
+- Family-wide discovery: each stable search match lists every member tool name
+  of its family (`groupTools`), and the whole family becomes dispatchable from
+  that one search, so a plugin's tool surface is no longer truncated to the
+  top-ranked slice.
 - Stable-proxy `status` action lists every deferred family with member tool
   names, giving the model a catalog-browsing fallback when a search query has
   no lexical overlap.
+- `statusGrantsDiscovery` option (default `false`): when enabled, one `status`
+  listing makes every cataloged name dispatchable. The default keeps dispatch
+  behind a seen schema and the rejection message points to the deterministic
+  exact-name recovery search.
+- Generic verb prefixes (`get`, `list`, `create`, ...) never merge into
+  automatic families, so unrelated plugins sharing a prefix stay separate.
+- The built-in image-generation family covers generation task helpers such as
+  `get_image_generation_task` and `cancel_image_generation_task`.
 - CJK character-bigram tokenization so queries without space-delimited words
   match deferred definitions and family metadata without configured aliases.
 - `tool_dispatch` delegates its parallel-scheduling classification to the
   target tool, so concurrency-safe deferred tools keep overlapping execution.
+- Documentation: an ecosystem onboarding checklist (`alwaysVisible` for
+  high-frequency tools, `skillBindings` for Skill-shipping packages, explicit
+  `groups` for unconventional names).
 
 ### Changed
 
+- Search results now record per-call discovery increments in the rendered
+  text, plus a cumulative `discoveredCount`; the cumulative name list moved to
+  presentation metadata, so conversation growth stays bounded and resume
+  restores full state from the latest surviving entry.
+- The stable discovery prompt clarifies that names mentioned elsewhere in the
+  prompt still require discovery, and points to `status` for catalog browsing.
 - `max_results` values outside the configured range are clamped instead of
   rejected, matching upstream tool-search semantics.
 
@@ -74,6 +101,7 @@ All notable changes to this project are documented here. The format follows
 - Bundle manifest, GitHub source-install build path, documentation, tests, and
   continuous integration.
 
-[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/everclear077/dsh-progressive-tools/releases/tag/v0.1.0

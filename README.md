@@ -1,7 +1,7 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.2.0-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.3.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
@@ -46,6 +46,12 @@ and cancellation still run for the selected real tool.
 - Minimal tool definitions on the actual first AgentLoop request.
 - Byte-stable native tool list and Code Mode SDK across discovery calls.
 - Exact tool matches with full name, description, and parameter schema.
+- Family-wide discovery: each match names every sibling tool of its family, so
+  one search opens a plugin's complete dispatchable surface.
+- Browsable `status` catalog listing, with an optional
+  `statusGrantsDiscovery` grant for trusted deployments.
+- Bounded conversation growth: search results record per-call discovery
+  increments while resume state travels in presentation metadata.
 - Deterministic BM25-style lexical ranking over names, descriptions, nested
   parameter descriptions, enums, family metadata, and multilingual aliases.
 - Stable `tool_dispatch` transport with runtime schema validation through the
@@ -68,7 +74,7 @@ and cancellation still run for the selected real tool.
 ## Install
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.2.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.3.0
 ```
 
 Source installs run the package `prepare` script. If pnpm asks for build
@@ -123,10 +129,18 @@ The next call uses one returned definition:
 }
 ```
 
+Each match also lists every member tool name of its family, and the whole
+family becomes dispatchable from that one search — siblings that did not make
+the top-ranked slice can be dispatched by name or schema-loaded with one
+exact-name query.
+
 `tool_search` also accepts `{"action":"status"}`, which lists every deferred
-family with its member tool names alongside catalog and savings estimates.
-Search results are append-only conversation content; they never add native
-definitions to the top-level request.
+family with its member tool names alongside catalog and savings estimates. By
+default the listing is browse-only: dispatching an unseen name still requires
+one exact-name search, and the rejection message says so. Deployments that
+prefer immediate access can set `statusGrantsDiscovery: true`. Search results
+are append-only conversation content; they never add native definitions to the
+top-level request.
 
 ## Configure
 
@@ -140,6 +154,7 @@ The default configuration is intentionally small:
     dispatchToolName: tool_dispatch
     maxResults: 5
     requireDiscovery: true
+    statusGrantsDiscovery: false
     deferToolGuidance: true
     alwaysVisible:
       - skill
@@ -165,9 +180,12 @@ Family rules improve search without changing the stable request surface:
         include: [db_*, sql_*]
 ```
 
-See [configuration](./docs/configuration.md) for every option and the migration
-notes for `dynamic` mode. The [progressive disclosure model](./docs/progressive-disclosure.md)
-maps Skills, exact tool definitions, execution, and provider capability gaps.
+See [configuration](./docs/configuration.md) for every option, the
+plugin-ecosystem onboarding checklist (`alwaysVisible` for high-frequency
+tools, `skillBindings` for Skill-shipping packages, explicit `groups` for
+unconventional names), and the migration notes for `dynamic` mode. The
+[progressive disclosure model](./docs/progressive-disclosure.md) maps Skills,
+exact tool definitions, execution, and provider capability gaps.
 
 ## Execution and security semantics
 
@@ -186,6 +204,9 @@ enabled.
 - Deferred tools lose provider-native argument grammar at the outer request.
   Their original schema is validated at dispatch time by DSH.
 - A task may need one discovery call before execution.
+- Family siblings become dispatchable before their schemas were shown; the
+  pipeline still validates every call, but complex or side-effectful siblings
+  are best schema-loaded first with one exact-name search.
 - Search is deterministic lexical ranking, not an embedding service.
 - Search results add only matched definitions to conversation history, but those
   definitions remain there until normal compaction.

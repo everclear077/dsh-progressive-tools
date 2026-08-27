@@ -93,8 +93,17 @@ family metadata without configured aliases. Search returns at most
 Those definitions enter the ordinary tool result and therefore extend history
 append-only.
 
+Each match also lists every member name of its family (`groupTools`), and the
+whole family becomes discovered in the same call. One query therefore opens a
+plugin's complete tool surface even when only its top-ranked members carry
+full schemas; the remaining siblings dispatch by name and validate against
+their original definitions, or can be schema-loaded first with one exact-name
+search.
+
 The `status` action lists every deferred family with its member tool names, so
 the model can browse the catalog when a search query has no lexical overlap.
+By default the listing is browse-only; `statusGrantsDiscovery` optionally
+turns it into a catalog-wide discovery grant.
 
 Successful `tools/result` observation commits the returned names to the
 agent's discovered set. Failed or invalid searches do not mutate live state.
@@ -167,15 +176,25 @@ section is outside the discovery invariant.
 
 ## Resume behavior
 
-Top-level search calls project a compact `discoveredTools` list through normal
-result metadata. Nested Code Mode calls have no top-level presentation
-metadata, so their standard `tool/code-dispatch` content is folded instead.
+Discovery state is recorded asymmetrically. The rendered search result — the
+text the model reads and re-reads in history — carries only the names newly
+discovered by that call, so conversation growth stays bounded no matter how
+much has been discovered. The result's presentation metadata, which never
+reaches the model, carries the cumulative discovered list and the action kind.
 
-The plugin introduces no custom session event vocabulary. On resume it replays
-successful search results and skill bindings. Discovered names survive
-registry refreshes such as provider reconnects; dispatch validates catalog
-membership at call time, so a stale name fails the individual call without
-losing the rest of the discovery state.
+On resume the plugin replays successful search results and skill bindings,
+preferring the cumulative metadata when present and unioning per-call
+increments otherwise. The metadata path restores full state from the latest
+surviving entry even when older events were compacted. Nested Code Mode calls
+have no top-level presentation metadata, so their standard
+`tool/code-dispatch` content increments are folded instead. A replayed
+`status` result also restores the catalog-listing grant used by
+`statusGrantsDiscovery`.
+
+The plugin introduces no custom session event vocabulary. Discovered names
+survive registry refreshes such as provider reconnects; dispatch validates
+catalog membership at call time, so a stale name fails the individual call
+without losing the rest of the discovery state.
 
 ## Dynamic compatibility mode
 

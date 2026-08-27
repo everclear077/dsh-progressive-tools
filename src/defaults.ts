@@ -10,6 +10,7 @@ export const DEFAULT_MAX_ACTIVE_TOOL_TOKENS = 6_000
 export const DEFAULT_RETENTION_TURNS = 6
 export const DEFAULT_CHARACTERS_PER_TOKEN = 4
 export const DEFAULT_REQUIRE_DISCOVERY = true
+export const DEFAULT_STATUS_GRANTS_DISCOVERY = false
 export const DEFAULT_DEFER_TOOL_GUIDANCE = true
 export const DEFAULT_ALWAYS_VISIBLE = [
   'skill',
@@ -37,7 +38,15 @@ export const DEFAULT_GROUPS: readonly ToolGroupConfig[] = [
     id: 'image-generation',
     description: 'Image generation and image editing.',
     aliases: ['image generation', 'generate image', '生图', '图片生成'],
-    include: ['imagegen*', 'image_gen*', 'generate_image*', 'edit_image*'],
+    include: [
+      'imagegen*',
+      'image_gen*',
+      'generate_image*',
+      'edit_image*',
+      'get_image_generation*',
+      'cancel_image_generation*',
+      'image_generation*',
+    ],
   },
   {
     id: 'filesystem',
