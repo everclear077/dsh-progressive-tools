@@ -4,6 +4,20 @@ Configuration is validated when the plugin loads. Invalid modes, names,
 limits, duplicate family IDs, empty patterns, and bindings to unknown families
 fail loudly.
 
+## Runtime compatibility
+
+This unreleased checkout targets runtime `0.1.5-rc.1` and pins its core peers
+to that tested version. Do not install it into a `0.1.1-rc.2` profile or assume
+compatibility with later prereleases. Existing plugin configuration remains
+unchanged. PTC presentation is configured on the host tool runtime with
+`mode: ptc` or `mode: both`; the plugin's own `mode` still selects
+`stable-proxy` or `dynamic`.
+
+The host owns session format migration. Discovery replay accepts current
+`tool/ptc-dispatch` records and historical `tool/code-dispatch` records when
+the host preserves them as ignorable events. This does not make an arbitrary
+old host session file loadable by the new runtime.
+
 ## Options
 
 | Option | Type | Default | Meaning |

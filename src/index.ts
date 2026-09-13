@@ -9,13 +9,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
-import { CallId, HarnessError } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, renderToolsSdk, renderToolsSdkPy } from '@deepseek-ai/dsh-tools'
 import type {
   InferValue,
   JsonSchemaNode,
-  JsonValue,
   ToolExecutionResult,
   ToolExecutionToken,
 } from '@deepseek-ai/dsh-tools'
@@ -93,6 +92,8 @@ export type {
   ToolGroupConfig,
   ToolSchemaView,
 } from './types.js'
+
+type JsonValue = InferValue<{ type: 'json' }>
 
 export const name = 'progressive-tools'
 export const inject = ['tools', 'systemPrompt']
@@ -361,6 +362,20 @@ function textContentValue(content: unknown): unknown {
   return isRecord(first) && first.type === 'text' ? parseJson(first.text) : undefined
 }
 
+function nestedDispatch(event: unknown): {
+  name: string
+  arguments: unknown
+  content: unknown
+} | undefined {
+  if (!isRecord(event)
+    || (event.type !== 'tool/ptc-dispatch' && event.type !== 'tool/code-dispatch')
+    || !isRecord(event.data)
+    || event.data.isError !== false
+    || typeof event.data.name !== 'string') return undefined
+  // Older log-only records may survive migration as ignorable events.
+  return { name: event.data.name, arguments: event.data.arguments, content: event.data.content }
+}
+
 function toolResultContent(message: unknown): { callId: string; isError: boolean; value: unknown } | undefined {
   if (!isRecord(message) || !isRecord(message.source) || typeof message.source.callId !== 'string') return undefined
   if (!Array.isArray(message.content) || !isRecord(message.content[0])) return undefined
@@ -527,7 +542,7 @@ export function apply(ctx: Context, input: Config): void {
     if (dispose !== undefined) mutateRestriction(dispose)
   }
 
-  const latestTurn = (agent: Agent): number => agent.session.events.reduce(
+  const latestTurn = (agent: Agent): number => agent.session.snapshotEvents().reduce(
     (maximum, event) => Math.max(maximum, eventTurn(event)),
     0,
   )
@@ -571,7 +586,7 @@ export function apply(ctx: Context, input: Config): void {
 
   const restoreFromEvents = (state: AgentState): void => {
     const calls = new Map<string, LoggedCall>()
-    for (const event of state.agent.session.events) {
+    for (const event of state.agent.session.snapshotEvents()) {
       state.progressive.currentTurn = Math.max(state.progressive.currentTurn, eventTurn(event))
       if (event.type === 'tool/call') {
         calls.set(String(event.data.callId), {
@@ -612,9 +627,8 @@ export function apply(ctx: Context, input: Config): void {
         }
         continue
       }
-      if (event.type !== 'tool/code-dispatch') continue
-      const nested = event.data
-      if (nested.isError) continue
+      const nested = nestedDispatch(event)
+      if (nested === undefined) continue
       if (nested.name === config.toolName) {
         const value = textContentValue(nested.content)
         if (config.mode === 'stable-proxy') {
@@ -872,7 +886,7 @@ export function apply(ctx: Context, input: Config): void {
         try {
           const nested = await exec.agent.ctx.tools.execute({
             signal: exec.signal,
-            callId: CallId(`${String(exec.callId)}:dispatch`),
+            callId: ToolCallId(`${String(exec.callId)}:dispatch`),
             rootCallId: exec.rootCallId,
             parent: exec.token,
             name: args.name,

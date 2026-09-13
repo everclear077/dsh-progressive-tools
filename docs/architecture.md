@@ -1,5 +1,20 @@
 # Architecture
 
+## Runtime baseline
+
+The current checkout targets `0.1.5-rc.1`. Calls use `ToolCallId`, and replay
+reads `session.snapshotEvents()` instead of the former mutable event view.
+Current PTC subcalls persist `tool/ptc-dispatch`; replay also recognizes old
+`tool/code-dispatch` records retained as ignorable events by host migration.
+The plugin itself does not rewrite session storage.
+
+Agent creation is asynchronous and the integration harness mounts session
+projections. Request prefix tests compare the leading system-role message,
+because loop-built requests no longer populate the standalone `system` field.
+Additional PTC/both tests exercise the real dispatch bridge with a binding
+runtime fixture, checking both SDK languages and unload/reload replay. They
+do not certify the language interpreters or measure provider cache savings.
+
 ## Goals and invariants
 
 The default architecture has four invariants:
