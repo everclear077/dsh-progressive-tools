@@ -71,10 +71,17 @@ and cancellation still run for the selected real tool.
 - DeepSeek Harness `0.1.1-rc.2` or a compatible `0.1.x` release
 - pnpm for source installation and development
 
+## Runtime compatibility
+
+This unreleased checkout targets runtime `0.1.5-rc.1`. Core peer versions are
+pinned to that tested release; older runtimes and later prereleases are not
+covered. The existing `v0.3.0` tag predates this adaptation. The command below
+uses the current main branch; pin a reviewed commit for reproducible deployments.
+
 ## Install
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.3.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#main
 ```
 
 Source installs run the package `prepare` script. If pnpm asks for build

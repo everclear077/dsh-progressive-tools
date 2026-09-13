@@ -3,11 +3,12 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, {
-  CallId,
+  ToolCallId,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjection from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import * as ProgressiveTools from '../src/index.js'
@@ -33,12 +34,21 @@ function oneStopResponse(): AsyncIterable<StreamChunk> {
   })()
 }
 
+function systemOf(request: GenerateOptions | undefined): string {
+  const message = request?.messages[0]
+  expect(message?.role).toBe('system')
+  const text = message?.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('') ?? ''
+  expect(text).toContain('tool_search')
+  return text
+}
+
 describe('AgentLoop request integration', () => {
   it('sends a minimal first request and preserves the exact tool prefix after discovery', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjection)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LlmRuntime)
     for (const name of ['browser_open', 'browser_click', 'db_query', 'skill', 'ask_user_question']) {
@@ -58,7 +68,7 @@ describe('AgentLoop request integration', () => {
       return oneStopResponse()
     })
 
-    const agent = ctx.agentLoop.create(SessionId('request-integration'), {
+    const agent = await ctx.agentLoop.create(SessionId('request-integration'), {
       provider: 'fixture',
       model: 'fixture',
     })
@@ -78,7 +88,7 @@ describe('AgentLoop request integration', () => {
 
     const search = await ctx.tools.execute({
       signal,
-      callId: CallId('integration-search'),
+      callId: ToolCallId('integration-search'),
       name: 'tool_search',
       arguments: { query: 'browser navigation' },
       agent,
@@ -92,14 +102,14 @@ describe('AgentLoop request integration', () => {
     await agent.whenIdle()
 
     expect(requests).toHaveLength(2)
-    expect(requests[1]?.tools).toEqual(requests[0]?.tools)
-    expect(requests[1]?.system).toBe(requests[0]?.system)
+    expect(JSON.stringify(requests[1]?.tools)).toBe(JSON.stringify(requests[0]?.tools))
+    expect(systemOf(requests[1])).toBe(systemOf(requests[0]))
 
     // A status listing and the family-wide discovery it precedes must not
     // write back into the stable prefix either.
     const status = await ctx.tools.execute({
       signal,
-      callId: CallId('integration-status'),
+      callId: ToolCallId('integration-status'),
       name: 'tool_search',
       arguments: { action: 'status' },
       agent,
@@ -113,7 +123,7 @@ describe('AgentLoop request integration', () => {
     await agent.whenIdle()
 
     expect(requests).toHaveLength(3)
-    expect(requests[2]?.tools).toEqual(requests[0]?.tools)
-    expect(requests[2]?.system).toBe(requests[0]?.system)
+    expect(JSON.stringify(requests[2]?.tools)).toBe(JSON.stringify(requests[0]?.tools))
+    expect(systemOf(requests[2])).toBe(systemOf(requests[0]))
   })
 })

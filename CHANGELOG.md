@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Target runtime `0.1.5-rc.1` explicitly; older runtimes are no longer supported
+  by this checkout. Align the validator with version `3.18.2` and update the lockfile.
+- Use `ToolCallId`, session event snapshots, and current PTC dispatch records.
+  Recognize historical nested records when the host retains them as ignorable
+  events; the plugin does not migrate host session files.
+- Update the integration fixture for asynchronous agent creation and session
+  projections, and compare the actual leading system message in requests.
+
+### Added
+
+- PTC and both-mode bridge regressions for TypeScript/Python SDK stability,
+  direct-call denial, target validation, and discovery restoration after reload.
+  These use a binding runtime fixture, not language interpreters.
+
 ## [0.3.0] - 2026-08-25
 
 Upgrading changes the stable discovery prompt text, so every deployment pays
