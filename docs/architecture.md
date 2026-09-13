@@ -202,7 +202,8 @@ preferring the cumulative metadata when present and unioning per-call
 increments otherwise. The metadata path restores full state from the latest
 surviving entry even when older events were compacted. Nested Code Mode calls
 have no top-level presentation metadata, so their standard
-`tool/code-dispatch` content increments are folded instead. A replayed
+`tool/ptc-dispatch` content increments are folded instead (with historical
+`tool/code-dispatch` records accepted when preserved by host migration). A replayed
 `status` result also restores the catalog-listing grant used by
 `statusGrantsDiscovery`.
 

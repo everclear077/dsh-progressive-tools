@@ -6,6 +6,9 @@
 
 [English](./README.md)
 
+[文档导航](./docs/README.md) · [快速上手](./docs/getting-started.md) ·
+[升级指南](./docs/migration.md) · [问题排查](./docs/troubleshooting.md)
+
 ## 解决的问题
 
 每个可见工具的名称、描述和参数 schema 都会重复占用请求 token。如果后续
@@ -57,14 +60,14 @@ tool_search 结果 ─────┴──► 把命中的精确定义追加到
 
 ## 运行时兼容性
 
-当前未发布代码适配运行时 `0.1.5-rc.1`，核心 peer 依赖固定到该验证版本，
-不承诺兼容旧运行时或后续预发布版本。现有 `v0.3.0` 标签尚未包含此次适配。
-下面的安装命令使用当前主分支；可复现部署应固定到审核过的提交。
+`0.4.0` 版本适配运行时 `0.1.5-rc.1`，核心 peer 依赖固定到该验证版本，
+不承诺兼容旧运行时或后续预发布版本。早期插件版本尚未包含此次适配。
+下面的安装命令固定到此次发布标签，以便复现部署。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#main
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.4.0
 ```
 
 如果 pnpm 要求授权源码构建，把错误信息中给出的精确包名加入对应 profile 的

@@ -28,6 +28,11 @@ families at the cost of cache stability.
 
 ## Commands
 
+Current release: `0.4.0`; supported host core baseline: `0.1.5-rc.1`.
+Core peers are pinned to the tested prerelease. Do not broaden the range
+without a compatibility run. Read [docs/README.md](./docs/README.md) for
+onboarding, migration, testing, release and maintenance guidance.
+
 ```sh
 pnpm install          # install dependencies (pnpm 11, Node 22.19+ or 24+)
 pnpm run typecheck    # tsc --noEmit
@@ -35,6 +40,7 @@ pnpm run lint         # oxlint src tests
 pnpm run test         # vitest run
 pnpm run build        # tsc -p tsconfig.build.json -> lib/
 pnpm run check        # typecheck + lint + test + build + publint (run before finishing)
+pnpm peers check      # confirm the installed validation graph has no peer conflicts
 ```
 
 ## Invariants that must not break

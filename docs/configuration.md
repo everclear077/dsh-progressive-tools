@@ -6,7 +6,7 @@ fail loudly.
 
 ## Runtime compatibility
 
-This unreleased checkout targets runtime `0.1.5-rc.1` and pins its core peers
+Version `0.4.0` targets runtime `0.1.5-rc.1` and pins its core peers
 to that tested version. Do not install it into a `0.1.1-rc.2` profile or assume
 compatibility with later prereleases. Existing plugin configuration remains
 unchanged. PTC presentation is configured on the host tool runtime with

@@ -1,7 +1,7 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.3.0-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.4.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
@@ -10,6 +10,9 @@ catalog in process memory, and executes discovered tools through the ordinary
 Harness pipeline.
 
 [中文文档](./README.zh-CN.md)
+
+[Documentation map](./docs/README.md) · [Getting started](./docs/getting-started.md) ·
+[Upgrade guide](./docs/migration.md) · [Troubleshooting](./docs/troubleshooting.md)
 
 ## Why
 
@@ -68,20 +71,20 @@ and cancellation still run for the selected real tool.
 ## Requirements
 
 - Node.js `^22.19.0` or `>=24.0.0`
-- DeepSeek Harness `0.1.1-rc.2` or a compatible `0.1.x` release
+- Host runtime `0.1.5-rc.1` (exact tested core peer versions)
 - pnpm for source installation and development
 
 ## Runtime compatibility
 
-This unreleased checkout targets runtime `0.1.5-rc.1`. Core peer versions are
+Version `0.4.0` targets runtime `0.1.5-rc.1`. Core peer versions are
 pinned to that tested release; older runtimes and later prereleases are not
-covered. The existing `v0.3.0` tag predates this adaptation. The command below
-uses the current main branch; pin a reviewed commit for reproducible deployments.
+covered. Earlier plugin versions predate this adaptation. The command below
+uses the release tag for reproducible deployments.
 
 ## Install
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#main
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.4.0
 ```
 
 Source installs run the package `prepare` script. If pnpm asks for build

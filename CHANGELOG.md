@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-13
+
 ### Changed
 
 - Target runtime `0.1.5-rc.1` explicitly; older runtimes are no longer supported
@@ -21,6 +23,9 @@ All notable changes to this project are documented here. The format follows
 - PTC and both-mode bridge regressions for TypeScript/Python SDK stability,
   direct-call denial, target validation, and discovery restoration after reload.
   These use a binding runtime fixture, not language interpreters.
+- Documentation navigation, setup, migration, troubleshooting, verification
+  boundaries, coding workflow, release/rollback procedure, and maintenance roadmap.
+- Pull request and issue templates with reproducible acceptance evidence.
 
 ## [0.3.0] - 2026-08-25
 
@@ -117,7 +122,8 @@ prefix is byte-stable again from the second request onward.
 - Bundle manifest, GitHub source-install build path, documentation, tests, and
   continuous integration.
 
-[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.2.0...v0.3.0
+[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/everclear077/dsh-progressive-tools/compare/f2bd297...v0.4.0
+[0.3.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.2.0...f2bd297
 [0.2.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/everclear077/dsh-progressive-tools/releases/tag/v0.1.0
