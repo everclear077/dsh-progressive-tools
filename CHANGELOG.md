@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
 
 - Record measured token, cache, latency, and task-outcome impact in both
   READMEs, with an architecture overview figure.
+- Replace the ASCII `stable-proxy` sketch in both READMEs with a staged
+  request-flow diagram (registry, frozen surface, three call paths, dispatch
+  pipeline).
 
 ## [0.4.0] - 2026-09-13
 

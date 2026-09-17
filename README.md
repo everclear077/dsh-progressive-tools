@@ -29,20 +29,9 @@ cache reuse. Progressive disclosure needs both properties at once:
 
 The default `stable-proxy` mode provides that contract:
 
-```text
-complete registry (process memory)
-        │
-        ├── exact searchable definitions
-        │
-        └── fixed request surface
-              ├── tool_search
-              ├── tool_dispatch
-              └── common direct tools
-                       │
-tool_search result ────┴──► append exact matches to conversation history
-                                  │
-                                  └── tool_dispatch ──► normal DSH execution pipeline
-```
+<p align="center">
+  <img src="docs/assets/stable-proxy-flow.svg" alt="stable-proxy flow: complete registry in process memory splits into a deferred catalog and a frozen request surface; three call paths then either skip to the ordinary pipeline, search then dispatch, or stop at the monotonic guard" width="920">
+</p>
 
 Search changes conversation history, not the top-level tool list. Approval,
 guards, argument validation, timeout wrappers, result policy, deferred context,
