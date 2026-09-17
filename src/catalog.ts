@@ -170,6 +170,35 @@ export function buildCatalog(
   }
 }
 
+/**
+ * Queries that look like `family_member` or `plugin.tool` are treated as
+ * exact-name lookups. Capability phrases keep spaces and stay in lexical
+ * ranking.
+ */
+const IDENTIFIER_QUERY = /^[A-Za-z][A-Za-z0-9]*(?:[_.-][A-Za-z0-9]+)+$/
+
+function isExactNameQuery(query: string): boolean {
+  return IDENTIFIER_QUERY.test(query.trim())
+}
+
+function hasCatalogNameHit(catalog: ToolCatalog, query: string): boolean {
+  const normalizedQuery = normalize(query)
+  if (normalizedQuery === '') return false
+  for (const name of catalog.tools.keys()) {
+    const normalizedName = normalize(name)
+    if (normalizedName === normalizedQuery || normalizedName.includes(normalizedQuery)) return true
+  }
+  for (const group of catalog.groups.values()) {
+    if (normalize(group.id) === normalizedQuery) return true
+    if (group.aliases.some(alias => normalize(alias) === normalizedQuery)) return true
+  }
+  return false
+}
+
+function skipUnmatchedExactName(catalog: ToolCatalog, query: string): boolean {
+  return isExactNameQuery(query) && !hasCatalogNameHit(catalog, query)
+}
+
 function scoreGroup(group: ToolGroup, query: string): number {
   const normalizedQuery = normalize(query)
   if (normalizedQuery === '') return 0
@@ -195,6 +224,7 @@ function scoreGroup(group: ToolGroup, query: string): number {
 }
 
 export function searchCatalog(catalog: ToolCatalog, query: string, limit: number): SearchMatch[] {
+  if (skipUnmatchedExactName(catalog, query)) return []
   return [...catalog.groups.values()]
     .map(group => ({ group, score: scoreGroup(group, query) }))
     .filter(candidate => candidate.score > 0)
@@ -224,6 +254,9 @@ export function searchTools(catalog: ToolCatalog, query: string, limit: number):
   const normalizedQuery = normalize(query)
   const queryTokens = [...new Set(tokens(query))]
   if (normalizedQuery === '' || queryTokens.length === 0) return []
+  // An unmatched identifier must not dump unrelated schemas. Shared tokens
+  // such as "tool" otherwise fill maxResults and inflate later turns.
+  if (skipUnmatchedExactName(catalog, query)) return []
 
   const documents = [...catalog.tools.values()].map(tool => ({
     tool,

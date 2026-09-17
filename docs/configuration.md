@@ -28,7 +28,7 @@ old host session file loadable by the new runtime.
 | `alwaysVisible` | string[] | essential direct tools | Exact names or `*` patterns kept on the fixed direct surface. |
 | `groups` | group[] | built-in rules | Ordered search and dynamic activation families; first match wins. |
 | `skillBindings` | binding[] | `[]` | Successful Skill calls that discover or activate named families. |
-| `maxResults` | integer | `5` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. Caller `max_results` values outside `1..maxResults` are clamped, not rejected. |
+| `maxResults` | integer | `2` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. Caller `max_results` values outside `1..maxResults` are clamped, not rejected. |
 | `requireDiscovery` | boolean | `true` | Require a search hit, a family-wide discovery, or a Skill binding before stable dispatch. |
 | `statusGrantsDiscovery` | boolean | `false` | Let one `status` listing make every cataloged name dispatchable. Off by default so dispatch always follows a seen schema. |
 | `deferToolGuidance` | boolean | `true` | Remove exact hidden `tool:<name>` prompt sections. |
@@ -53,6 +53,11 @@ alwaysVisible:
   - report
   - submit_*
   - structured_output*
+  - read
+  - write
+  - edit
+  - glob
+  - grep
 ```
 
 `tool_search` and `tool_dispatch` are added automatically. A matching tool must
@@ -61,8 +66,9 @@ later enter the deferred catalog even when their names match an
 `alwaysVisible` wildcard; this keeps the active session prefix stable. A new
 session sees the new composition.
 
-Keep this list small. Add only tools whose direct schema or completion role is
-worth paying on every request.
+Keep this list small. Filesystem names are included because ordinary read,
+write, and search work is frequent enough to pay on every request; add further
+tools only when their direct schema is similarly worth that cost.
 
 ## Wildcards
 
@@ -135,7 +141,9 @@ nested execution.
 A `status` listing is browse-only by default: it shows every family and member
 name but does not unlock dispatch, so the model must load a schema before
 calling. The rejection message points to the deterministic recovery — search
-the exact name once (exact matches always rank first) and dispatch. Set
+the exact name once (exact matches always rank first) and dispatch. Identifier
+queries with no catalog name hit return an empty match list instead of filling
+`maxResults` from overlapping description tokens. Set
 `statusGrantsDiscovery: true` to let one status call unlock the whole catalog;
 this trades away the seen-schema guarantee, so reserve it for deployments with
 approval layers or read-only tool surfaces.
@@ -207,11 +215,11 @@ Prefer stable mode when context-cache reuse is important.
     mode: stable-proxy
     toolName: tool_search
     dispatchToolName: tool_dispatch
-    maxResults: 5
+    maxResults: 2
     requireDiscovery: true
     statusGrantsDiscovery: false
     deferToolGuidance: true
-    alwaysVisible: [skill, ask_user_question, report, submit_*, structured_output*]
+    alwaysVisible: [skill, ask_user_question, report, submit_*, structured_output*, read, write, edit, glob, grep]
     groups:
       - id: browser
         description: Browser navigation and page interaction

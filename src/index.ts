@@ -784,11 +784,11 @@ export function apply(ctx: Context, input: Config): void {
   if (config.mode === 'stable-proxy') {
     ctx.tools.register(defineTool({
       name: config.toolName,
-      description: `Search deferred tools by capability. Use this whenever the visible tools do not cover the task. Returns exact names, descriptions, and parameter schemas for ${config.dispatchToolName}.`,
+      description: `Search deferred tools by task-oriented capability when the visible tools cannot do the work. Do not use this only to prove that a requested name is missing; refuse invented or uncallable names from the visible surface.`,
       parameters: {
         query: {
           type: 'string',
-          description: 'Task-oriented capability query. Include the object, action, or service involved.',
+          description: 'Task-oriented capability query. Include the object, action, or service involved. Do not pass an invented tool name just to confirm it is absent.',
         },
         action: {
           type: 'string',
@@ -920,7 +920,7 @@ export function apply(ctx: Context, input: Config): void {
     ctx.systemPrompt.section({
       name: 'progressive-tools:discovery',
       order: 140,
-      text: `Only the common tools are listed initially. When the task needs another capability, call ${config.toolName}; then call ${config.dispatchToolName} with an exact returned name and schema-valid arguments. Tool names mentioned elsewhere in this prompt but not listed as callable must be discovered the same way before dispatch. Use action "status" to browse the complete deferred catalog. Do not claim a capability is unavailable before searching.`,
+      text: `Only the common tools are listed initially. When the task needs another capability, call ${config.toolName} with a task-oriented query; then call ${config.dispatchToolName} with an exact returned name and schema-valid arguments. Tool names mentioned elsewhere in this prompt but not listed as callable must be discovered the same way before dispatch. Use action "status" to browse the complete deferred catalog. Search before declaring a needed capability class unavailable. Do not search merely to prove a named tool is missing: invented names, and names that are not on the visible surface when a refusal is enough, should be refused without searching.`,
     })
 
     ctx.tools.guard((execution) => {

@@ -92,6 +92,58 @@ async function execute(ctx: Context, agent: Agent, name: string, argumentsValue:
 }
 
 describe('progressive tools plugin', () => {
+  it('keeps registered filesystem tools on the first stable surface', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime)
+    for (const name of ['read', 'write', 'edit', 'glob', 'grep', 'browser_open', 'skill']) {
+      ctx.tools.register(tool(name))
+    }
+    await ctx.plugin(ProgressiveTools)
+    const { agent } = await (async () => {
+      const session = Session.create(SessionId('fs-visible-agent'))
+      const agent = {} as Agent
+      await ctx.plugin(Object.assign((inner: Context) => {
+        Object.assign(agent, { id: session.id, session, ctx: createScope(inner, agent).ctx })
+      }, { inject: ['tools', 'systemPrompt'] }))
+      return { agent }
+    })()
+    const first = await assemble(ctx, agent)
+    expect(first.tools.map(schema => schema.name).sort()).toEqual([
+      'edit',
+      'glob',
+      'grep',
+      'read',
+      'skill',
+      'tool_dispatch',
+      'tool_search',
+      'write',
+    ])
+    expect(first.tools.map(schema => schema.name)).not.toContain('browser_open')
+  })
+
+  it('tells the model not to search merely to prove a named tool is missing', async () => {
+    const { agent, ctx } = await setup()
+    const assembled = await assemble(ctx, agent)
+    const text = assembled.sections.find(section => section.name === 'progressive-tools:discovery')?.text ?? ''
+    expect(text).toContain('refused without searching')
+    expect(text).toContain('needed capability class')
+    expect(text).not.toContain('Do not claim a capability is unavailable before searching')
+    expect(assembled.tools.find(schema => schema.name === 'tool_search')?.description)
+      .toContain('refuse invented or uncallable names')
+  })
+
+  it('returns no schemas when an exact-name search misses the catalog', async () => {
+    const { agent, ctx } = await setup()
+    await assemble(ctx, agent)
+
+    const missed = await execute(ctx, agent, 'tool_search', {
+      query: 'definitely_not_a_real_tool_xyz',
+    }, 'missing-name')
+    expect(missed.isError).toBe(false)
+    expect(missed.isError ? [] : (missed.value as { matches: unknown[] }).matches).toEqual([])
+  })
+
   it('uses a minimal byte-stable surface on the first assembly and dispatches discovered tools', async () => {
     const { agent, ctx } = await setup()
     const policyNames: string[] = []
@@ -384,7 +436,7 @@ describe('progressive tools plugin', () => {
     const search = await execute(ctx, agent, 'tool_search', { query: 'browser', max_results: 99 }, 'clamp')
     expect(search.isError).toBe(false)
     const matches = search.isError ? [] : (search.value as { matches: unknown[] }).matches
-    expect(matches.length).toBeLessThanOrEqual(5)
+    expect(matches.length).toBeLessThanOrEqual(2)
     expect(matches.length).toBeGreaterThan(0)
   })
 

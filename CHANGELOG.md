@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Keep high-frequency filesystem tools (`read`, `write`, `edit`, `glob`,
+  `grep`) on the default stable surface so ordinary file work does not pay a
+  search-then-dispatch round.
+- Lower default `maxResults` from `5` to `2` so each search writes fewer full
+  schemas into conversation history.
+- Tell the agent not to search merely to prove a named tool is missing: refuse
+  invented or uncallable names from the visible surface, and still search
+  before declaring a needed capability class unavailable. An unmatched
+  identifier query now returns no definitions instead of filling `maxResults`
+  with unrelated schemas.
+
+### Docs
+
+- Record measured token, cache, latency, and task-outcome impact in both
+  READMEs, with an architecture overview figure.
+
 ## [0.4.0] - 2026-09-13
 
 ### Changed

@@ -74,7 +74,9 @@ name set:
 
 - `tool_search`;
 - `tool_dispatch`;
-- registered names matching `alwaysVisible`;
+- registered names matching `alwaysVisible` (filesystem tools `read`, `write`,
+  `edit`, `glob`, and `grep` are in the default list when the host registers
+  them);
 - the reserved `run_code` transport when DSH exposes it.
 
 The complete registry remains visible to in-process code. The assembly
@@ -103,10 +105,11 @@ contains:
 Ranking combines exact-name and contained-label bonuses with a deterministic
 BM25-style lexical score. CJK text is additionally tokenized into character
 bigrams, so queries without space-delimited words can match definitions and
-family metadata without configured aliases. Search returns at most
-`maxResults` exact definitions; larger `max_results` requests are clamped.
-Those definitions enter the ordinary tool result and therefore extend history
-append-only.
+family metadata without configured aliases. An identifier query with no catalog
+name hit returns nothing rather than filling `maxResults` from shared tokens
+such as `tool`. Search otherwise returns at most `maxResults` exact
+definitions; larger `max_results` requests are clamped. Those definitions
+enter the ordinary tool result and therefore extend history append-only.
 
 Each match also lists every member name of its family (`groupTools`), and the
 whole family becomes discovered in the same call. One query therefore opens a
@@ -118,7 +121,9 @@ search.
 The `status` action lists every deferred family with its member tool names, so
 the model can browse the catalog when a search query has no lexical overlap.
 By default the listing is browse-only; `statusGrantsDiscovery` optionally
-turns it into a catalog-wide discovery grant.
+turns it into a catalog-wide discovery grant. The discovery guidance still
+requires a search before declaring a needed capability class unavailable. It
+tells the model not to search merely to prove a named tool is missing.
 
 Successful `tools/result` observation commits the returned names to the
 agent's discovered set. Failed or invalid searches do not mutate live state.

@@ -163,6 +163,16 @@ describe('tool catalog', () => {
     expect(catalog.toolToGroup.get('get_goal')).toBe('get_goal')
   })
 
+  it('does not fill unrelated definitions for an unmatched exact name', () => {
+    const catalog = buildCatalog(schemas, groups, 4)
+
+    expect(searchTools(catalog, 'definitely_not_a_real_tool_xyz', 5)).toEqual([])
+    expect(searchCatalog(catalog, 'definitely_not_a_real_tool_xyz', 5)).toEqual([])
+    expect(searchTools(catalog, 'db_query', 1)[0]?.name).toBe('db_query')
+    expect(searchTools(catalog, 'browser navigation', 2).map(match => match.name))
+      .toEqual(['browser_open', 'browser_click'])
+  })
+
   it('returns every family member name alongside each exact match', () => {
     const catalog = buildCatalog(schemas, groups, 4)
     const matches = searchTools(catalog, 'browser', 1)
