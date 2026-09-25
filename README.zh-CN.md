@@ -172,17 +172,17 @@ S1–S7 的任务质量没有回退。100 轮 S8 的打分过严：只要搜索 
 
 ## 运行时兼容性
 
-`0.5.0` 版本适配运行时 `0.1.5-rc.1`，核心 peer 依赖固定到该验证版本，
+`0.5.1` 版本适配运行时 `0.1.5-rc.1`，核心 peer 依赖固定到该验证版本，
 不承诺兼容旧运行时或后续预发布版本。早期插件版本尚未包含此次适配。
 下面的安装命令固定到此次发布标签，以便复现部署。
 
 ## 安装
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.5.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.5.1
 ```
 
-同一版本也发布在 npm 仓库，包名为 `dsh-progressive-tools@0.5.0`。
+同一版本也发布在 npm 仓库，包名为 `@everclear077/dsh-progressive-tools@0.5.1`。
 
 如果 pnpm 要求授权源码构建，把错误信息中给出的精确包名加入对应 profile 的
 `pnpm-workspace.yaml`：

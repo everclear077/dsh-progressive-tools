@@ -1,7 +1,7 @@
 # Cost-optimization status
 
 Checked against the current worktree before implementation. Plugin version
-`0.5.0`. Host peers are pinned to `0.1.5-rc.1`. The installed host packages
+`0.5.1`. Host peers are pinned to `0.1.5-rc.1`. The installed host packages
 expose tool execution, rendering, presentation metadata, and
 `tools/ptc-dispatch-log`. That last event changes only the durable log copy.
 This checkout does not ship a public result-spill service the plugin can call.
