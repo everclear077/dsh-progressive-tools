@@ -12,7 +12,7 @@ Requirements:
 
 - Node.js `^22.19.0` or `>=24.0.0`
 - pnpm 11
-- The exact host core versions declared in `package.json` (`0.1.5-rc.1` for this release)
+- The exact host core versions declared in `package.json` (`0.1.7-rc.2` for this release)
 
 ```sh
 pnpm install

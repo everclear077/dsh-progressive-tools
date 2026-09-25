@@ -2,7 +2,7 @@
 
 ## Runtime baseline
 
-The current checkout targets `0.1.5-rc.1`. Calls use `ToolCallId`, and replay
+The current checkout targets `0.1.7-rc.2`. Calls use `ToolCallId`, and replay
 reads `session.snapshotEvents()` instead of the former mutable event view.
 Current PTC subcalls persist `tool/ptc-dispatch`; replay also recognizes old
 `tool/code-dispatch` records retained as ignorable events by host migration.
@@ -33,7 +33,7 @@ The plugin uses only public Harness APIs and extension points:
 - `ctx.tools.execute()` for nested real-tool execution;
 - `tools/result` for authoritative discovery commits;
 - `tools/change` for in-process catalog invalidation;
-- `agent/session-start` and durable session events for state initialization;
+- `agent/created` and durable session events for state initialization;
 - `agent/disposed` and Cordis effects for cleanup.
 
 ## The DSH lifecycle boundary
@@ -61,7 +61,7 @@ only the following assembly. Version 0.2.0 performs the authoritative
 projection in `system-prompt/assemble`, after all providers have contributed
 but before AgentLoop stores or sends the request.
 
-`agent/session-start` eagerly initializes the catalog for normal creation and
+`agent/created` eagerly initializes the catalog for normal creation and
 resume. The assembly hook remains authoritative and also covers hot reload,
 late registration, and callers that assemble without a normal startup event.
 
@@ -182,7 +182,7 @@ registers a monotonic guard:
 Tokens are registry-minted opaque identities, so a caller cannot manufacture
 the parent capability. Authorized tokens are removed on result and plugin
 cleanup. The guard prepares the agent's state on demand, so a call that
-arrives before the first assembly or session-start event is still classified
+arrives before the first assembly or agent/created event is still classified
 against the deferred catalog instead of passing through unexamined.
 
 The guard is not an authorization boundary for the underlying capability. It
@@ -235,7 +235,7 @@ without losing the rest of the discovery state.
 `mode: dynamic` retains the v0.1 family activation design for deployments that
 need provider-native definitions after search. Its lifecycle is corrected:
 
-- initial restriction is installed at `agent/session-start`;
+- initial restriction is installed at `agent/created`;
 - turn expiry is reconciled at `agent/inbox/claimed`;
 - successful search and skill results reinstall the restriction immediately;
 - the assembly waterfall filters the already-collected current assembly and

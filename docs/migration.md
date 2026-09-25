@@ -1,8 +1,9 @@
-# Upgrade to 0.5.1
+# Upgrade to 0.6.0
 
 ## Compatibility change
 
-This release requires host runtime `0.1.5-rc.1`. The former runtime baseline
+This release requires host runtime `0.1.7-rc.2`. The former runtime baseline
+`0.1.5-rc.1` is no longer accepted by this plugin. The earlier baseline
 `0.1.1-rc.2` is no longer supported by this checkout. Later prereleases are
 also outside the exact tested core peer versions. Existing plugin options
 retain their names and defaults.
@@ -12,7 +13,7 @@ retain their names and defaults.
 1. Record the existing host version, plugin commit/tag, and profile configuration.
 2. Back up session data using the host's supported storage procedure.
 3. Upgrade the host and its profile composition together to the required baseline.
-4. Install the plugin's `v0.5.1` tag, or npm package `@everclear077/dsh-progressive-tools@0.5.1`, using the command in the overview.
+4. Install npm package `@everclear077/dsh-progressive-tools@0.6.0` using the command in the overview.
 5. Inspect `--dump-config`, then start a fresh session and run the discovery smoke test.
 6. Test a restored session separately before making it the default deployment.
 

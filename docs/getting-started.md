@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Host runtime `0.1.5-rc.1`.
+- Host runtime `0.1.7-rc.2`.
 - Node.js `^22.19.0` or `>=24.0.0` and pnpm 11 for source builds.
 - A working host profile with the tools you want to discover already installed.
 

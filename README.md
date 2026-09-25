@@ -1,7 +1,7 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.5.1-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.6.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
@@ -176,17 +176,28 @@ set.
 
 - Minimal tool definitions on the actual first AgentLoop request.
 - Byte-stable native tool list and Code Mode SDK across discovery calls.
-- Exact tool matches with full name, description, and parameter schema.
-- Family-wide discovery: each match names every sibling tool of its family, so
-  one search opens a plugin's complete dispatchable surface.
+- Exact tool matches with full name, description, and parameter schema. An
+  exact registered name returns only that tool.
+- One family member table per search. Siblings are marked `schema`,
+  `name-only`, or `skill`, and the whole family stays dispatchable unless
+  `familyDiscovery` is set to `matched`.
 - Browsable `status` catalog listing, with an optional
   `statusGrantsDiscovery` grant for trusted deployments.
-- Bounded conversation growth: search results record per-call discovery
-  increments while resume state travels in presentation metadata.
+- Bounded conversation growth: the public search value omits the cumulative
+  discovery list. Resume state travels in presentation metadata. A repeated
+  search returns a short notice when that same definition is still in derived
+  history; `reload: true` returns the full schema.
 - Deterministic BM25-style lexical ranking over names, descriptions, nested
   parameter descriptions, enums, family metadata, and multilingual aliases.
 - Stable `tool_dispatch` transport with runtime schema validation through the
-  original tool definition.
+  original tool definition. The program value is `{ protocol, tool, value }`
+  and does not repeat the rendered body. `legacyResults: true` restores the
+  previous envelope.
+- Optional `resultBudget` for direct dispatch text and the model-facing
+  `run_code` text. The program value stays intact. `tool_result_read` reads
+  the stored original. This stays off unless enabled.
+- Optional `profile: coding`, `profile: auto`, and `autoloadMaxTools`. None of
+  these change the default frozen surface.
 - Monotonic guard that rejects direct calls to deferred tools and permits only
   dispatcher-owned nested execution trees.
 - Support for inherited and agent-scoped tools.
@@ -199,31 +210,40 @@ set.
 ## Requirements
 
 - Node.js `^22.19.0` or `>=24.0.0`
-- Host runtime `0.1.5-rc.1` (exact tested core peer versions)
+- Host runtime `0.1.7-rc.2` (exact tested core peer versions)
 - pnpm for source installation and development
 
 ## Runtime compatibility
 
-Version `0.5.1` targets runtime `0.1.5-rc.1`. Core peer versions are
+Version `0.6.0` targets runtime `0.1.7-rc.2`. Core peer versions are
 pinned to that tested release; older runtimes and later prereleases are not
-covered. Earlier plugin versions predate this adaptation. The command below
-uses the release tag for reproducible deployments.
+covered. Install the pinned npm version below so a profile does not float to
+a later release.
 
 ## Install
 
+Add the package to a Harness profile from the official npm registry:
+
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.5.1
+dsh plugin --profile web add npm:@everclear077/dsh-progressive-tools@0.6.0
 ```
 
-The same version is published on the npm registry as `@everclear077/dsh-progressive-tools@0.5.1`.
+Harness resolves that `npm:` spec with the active npm registry. Use the official registry when a mirror does not have this package:
 
-Source installs run the package `prepare` script. If pnpm asks for build
+```sh
+npm install @everclear077/dsh-progressive-tools@0.6.0 --registry https://registry.npmjs.org
+```
+
+The package name is `@everclear077/dsh-progressive-tools`. The unscoped name
+`dsh-progressive-tools` belongs to another account and is not this release.
+
+Installation runs the package `prepare` script. If pnpm asks for build
 authorization, add the exact package key it reports to the profile's
 `pnpm-workspace.yaml`:
 
 ```yaml
 allowBuilds:
-  dsh-progressive-tools: true
+  "@everclear077/dsh-progressive-tools": true
 ```
 
 Verify the composed layer before starting the profile:

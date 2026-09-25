@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-25
+
+### Changed
+
+- Target host runtime `0.1.7-rc.2`. Core peers, Cordis `~4.0.4`, and the
+  validator `~3.18.4` match that baseline. `0.1.5-rc.1` is no longer accepted.
+- Initialize discovery on `agent/created`. Replay reads current tool-result
+  messages and still accepts older tool-result content blocks.
+- PTC fixtures follow `ctx.ptcRuntime`. Program bindings are unchanged.
+
 ## [0.5.1] - 2026-09-25
 
 ### Changed
@@ -179,7 +189,8 @@ prefix is byte-stable again from the second request onward.
 - Bundle manifest, GitHub source-install build path, documentation, tests, and
   continuous integration.
 
-[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/everclear077/dsh-progressive-tools/compare/f2bd297...v0.4.0

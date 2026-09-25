@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import CodeRuntime from '@deepseek-ai/dsh-code-runtime'
-import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
+import PtcRuntime from '@deepseek-ai/dsh-ptc-runtime'
+import type { PtcRunRequest, PtcRunResult, PtcRunSpec } from '@deepseek-ai/dsh-ptc-runtime'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -27,18 +27,22 @@ function textTool(name: string, text = `ran:${name}`) {
   })
 }
 
-class BindingRuntime extends CodeRuntime {
+class BindingRuntime extends PtcRuntime {
   readonly isolation = 'fixture'
   readonly language: string
-  behavior: (request: CodeRunRequest) => Promise<CodeRunResult> = async () => ({ logs: [] })
+  behavior: (request: PtcRunRequest) => Promise<PtcRunResult> = async () => ({ logs: [] })
 
   constructor(ctx: Context, config: { language?: string }) {
     super(ctx)
     this.language = config.language ?? 'typescript'
   }
 
-  run(request: CodeRunRequest): Promise<CodeRunResult> {
-    return this.behavior(request)
+  resolve(request: PtcRunRequest): PtcRunSpec {
+    return { ...request, cwd: request.cwd ?? process.cwd(), timeoutMs: request.timeoutMs ?? null }
+  }
+
+  run(spec: PtcRunSpec): Promise<PtcRunResult> {
+    return this.behavior(spec)
   }
 }
 
@@ -110,7 +114,7 @@ describe('remaining cost work', () => {
       config: { resultBudget: true, resultBudgetCharacters: 400 },
       mode: 'both',
     })
-    const runtime = hosted.ctx.codeRuntime as BindingRuntime
+    const runtime = hosted.ctx.ptcRuntime as BindingRuntime
     runtime.behavior = async (request) => {
       const value = await request.bindings[0]!.functions.tool_dispatch!({
         name: 'browser_open',

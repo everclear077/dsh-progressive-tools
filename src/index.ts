@@ -536,13 +536,21 @@ function nestedDispatch(event: unknown): {
 
 function toolResultContent(message: unknown): { callId: string; isError: boolean; value: unknown } | undefined {
   if (!isRecord(message) || !isRecord(message.source) || typeof message.source.callId !== 'string') return undefined
-  if (!Array.isArray(message.content) || !isRecord(message.content[0])) return undefined
+  if (!Array.isArray(message.content)) return undefined
   const block = message.content[0]
-  if (block.type !== 'tool-result') return undefined
+  // Older logs wrap the model content in a tool-result block. Current host
+  // messages carry that content directly and put isError on the message.
+  if (isRecord(block) && block.type === 'tool-result') {
+    return {
+      callId: message.source.callId,
+      isError: block.isError === true,
+      value: textContentValue(block.content),
+    }
+  }
   return {
     callId: message.source.callId,
-    isError: block.isError === true,
-    value: textContentValue(block.content),
+    isError: message.isError === true,
+    value: textContentValue(message.content),
   }
 }
 
@@ -1219,7 +1227,7 @@ export function apply(ctx: Context, input: Config): void {
       const agent = execution.agent
       if (agent === undefined) return undefined
       // Prepare lazily so calls arriving before the first assembly or
-      // session-start event are still classified against the deferred catalog.
+      // agent/created event are still classified against the deferred catalog.
       const state = prepareStableState(agent)
       if (execution.parent !== undefined && authorizedProxyParents.has(execution.parent)) {
         authorizedProxyParents.add(execution.token)
@@ -1336,7 +1344,7 @@ export function apply(ctx: Context, input: Config): void {
     }
   }, { prepend: true })
 
-  ctx.on('agent/session-start', ({ agent }) => {
+  ctx.on('agent/created', ({ agent }) => {
     if (config.mode === 'stable-proxy') prepareStableState(agent)
     else prepareDynamicState(agent, latestTurn(agent))
   }, { prepend: true })

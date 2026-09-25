@@ -17,8 +17,8 @@ Direct model content stays the target rendering.
 
 ```json
 {
-  "pluginVersion": "0.5.1",
-  "hostVersion": "0.1.5-rc.1",
+  "pluginVersion": "0.6.0",
+  "hostVersion": "0.1.7-rc.2",
   "config": {
     "mode": "stable-proxy",
     "legacyResults": false,

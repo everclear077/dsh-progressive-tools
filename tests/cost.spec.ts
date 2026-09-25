@@ -356,8 +356,8 @@ describe('offline cost accounting', () => {
     expect(priced).toEqual({ currency: 'USD', amount: 9.625, reason: 'computed' })
     expect(attributeTarget(['run_code', 'tool_dispatch', 'bash'])).toBe('bash')
     const report = buildBaselineReport({
-      pluginVersion: '0.5.1',
-      hostVersion: '0.1.5-rc.1',
+      pluginVersion: '0.6.0',
+      hostVersion: '0.1.7-rc.2',
       config: { mode: 'stable-proxy' },
       catalogToolCount: 2,
       omittedDefinitionTokens: 10,

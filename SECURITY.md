@@ -3,7 +3,7 @@
 ## Supported versions
 
 Security fixes are provided for the latest released minor version.
-For release `0.5.1`, the supported host core baseline is `0.1.5-rc.1`.
+For release `0.6.0`, the supported host core baseline is `0.1.7-rc.2`.
 Older plugin/host combinations and later host prereleases need separate
 validation; see the [migration guide](./docs/migration.md).
 
