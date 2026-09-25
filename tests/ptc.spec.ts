@@ -73,6 +73,7 @@ describe.each(['ptc', 'both'] as const)('stable projection in %s mode', (mode) =
       await bindings.tool_search!({ query: 'browser_open' })
       const value = await bindings.tool_dispatch!({ name: 'browser_open', arguments: { url: 'example' } })
       expect(value).toMatchObject({ tool: 'browser_open', value: 'opened:example' })
+      expect(value).not.toHaveProperty('content')
       await expect(bindings.tool_dispatch!({ name: 'browser_open', arguments: {} })).rejects.toThrow()
       return { logs: [], value }
     }

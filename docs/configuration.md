@@ -31,12 +31,21 @@ old host session file loadable by the new runtime.
 | `maxResults` | integer | `2` | Maximum exact definitions returned by stable search, or group matches in dynamic mode. Caller `max_results` values outside `1..maxResults` are clamped, not rejected. |
 | `requireDiscovery` | boolean | `true` | Require a search hit, a family-wide discovery, or a Skill binding before stable dispatch. |
 | `statusGrantsDiscovery` | boolean | `false` | Let one `status` listing make every cataloged name dispatchable. Off by default so dispatch always follows a seen schema. |
-| `deferToolGuidance` | boolean | `true` | Remove exact hidden `tool:<name>` prompt sections. |
+| `deferToolGuidance` | boolean | `true` | Remove exact hidden `tool:<name>` prompt sections. Removed text is attached when that tool's definition is loaded. |
 | `activationGroupLimit` | integer | `1` | Dynamic mode: highest-ranked families activated by one search. |
 | `maxActiveGroups` | integer | `3` | Dynamic mode: maximum retained active families. |
 | `maxActiveToolTokens` | integer | `6000` | Dynamic mode: approximate active-schema budget. |
 | `retentionTurns` | integer | `6` | Dynamic mode: inactive turns before expiry; `0` disables expiry. |
 | `charactersPerToken` | integer | `4` | Compact schema characters represented by one estimate token. |
+| `legacyResults` | boolean | `false` | Restore the v2 search value and the v1 dispatch envelope that repeats `content`. |
+| `maxResultCharacters` | integer | `12000` | Stable-search character budget, including guidance and the wrapper. Schemas are not truncated. One oversized definition is still returned. |
+| `profile` | `default` \| `coding` \| `auto` | `default` | `coding` adds terminal-tool patterns. `auto` does that only when a matching tool is registered at the first assembly. An explicit `alwaysVisible` list that differs from the default wins. |
+| `repeatDefinitions` | `compact` \| `full` | `compact` | Return a short notice when the same full definition is still in derived history. `reload: true` forces the schema. |
+| `capabilitySummaryCharacters` | integer | `1500` | Budget for the frozen capability summary. It lists classes, not members. |
+| `resultBudget` | boolean | `false` | Budget model-visible direct `tool_dispatch` text and register `tool_result_read`. Program values are not truncated. |
+| `resultBudgetCharacters` | integer | `8000` | Direct-dispatch model-text budget used when `resultBudget` is on. |
+| `familyDiscovery` | `family` \| `matched` | `family` | `matched` discovers only tools whose schema was returned. |
+| `autoloadMaxTools` | integer | `0` | When positive, a deferred catalog of this size or smaller is placed on the frozen surface at first assembly. Zero leaves those tools deferred. Later registrations do not expand that surface. |
 
 `activationGroupLimit` cannot exceed `maxActiveGroups`. Dynamic-only fields are
 still validated in stable mode so switching modes cannot reveal a latent bad
@@ -101,9 +110,9 @@ Generic verb prefixes (`get`, `set`, `list`, `create`, `delete`, `update`,
 `new`, `check`) never merge, because unrelated plugins routinely share them;
 such tools stay singleton families unless a configured rule claims them.
 
-In stable mode, family metadata improves exact-tool search, the result
-contains the highest-ranked individual definitions, and each match lists every
-member name of its family so siblings become dispatchable from one query. In
+In stable mode, family metadata improves exact-tool search. The result
+contains the highest-ranked individual definitions and one family member
+table. Siblings become dispatchable from that search. In
 dynamic mode, the highest-ranked whole family becomes natively visible.
 Because family membership now also widens discovery, a wrong rule no longer
 just skews ranking — it unlocks unrelated names. Keep custom rules precise.

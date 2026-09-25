@@ -31,6 +31,26 @@ Top-level discovery metadata and incremental search results remain supported.
 Code bindings and host transport names must match the current runtime; do not
 copy old presentation configuration blindly into a new profile.
 
+## Search and dispatch results
+
+The default search value is `dsh-progressive-tools/v3`. It omits the
+cumulative discovery list, catalog estimates, and repeated per-match family
+tables. Resume metadata still stores the cumulative names. Readers of old v2
+and v1 records are unchanged.
+
+The default dispatch value is `dsh-progressive-tools/dispatch-v2`. Programs
+should read `.value`. `.content` is no longer on that object. Direct calls
+still show the target rendering.
+
+Set `legacyResults: true` to restore both previous envelopes. Set
+`repeatDefinitions: full` to always return schemas. Set `resultBudget: false`
+(the default) to disable model-text budgeting, `tool_result_read`, and the
+`run_code` text replacement. Set `profile: default` to keep the previous
+always-visible list. Set `autoloadMaxTools: 0` to keep small catalogs deferred.
+
+`familyDiscovery: matched` is the opt-in narrowing of family discovery. The
+default remains `family`.
+
 ## Rollback
 
 Restore a known-working host/plugin pair and its recorded profile config.

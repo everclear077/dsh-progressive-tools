@@ -241,6 +241,20 @@ export function searchCatalog(catalog: ToolCatalog, query: string, limit: number
     }))
 }
 
+function dropLowRelevance(
+  ranked: readonly { tool: CatalogTool; score: number; group: string }[],
+  queryTokens: readonly string[],
+): { tool: CatalogTool; score: number; group: string }[] {
+  const top = ranked[0]
+  if (top === undefined) return []
+  const floor = top.score * 0.15
+  return ranked.filter((candidate, index) => {
+    if (index === 0) return true
+    if (candidate.score >= floor) return true
+    return tokens(candidate.tool.name).some(token => queryTokens.includes(token))
+  })
+}
+
 function termFrequency(documentTokens: readonly string[], term: string): number {
   return documentTokens.reduce((count, token) => count + (token === term ? 1 : 0), 0)
 }
@@ -276,8 +290,16 @@ export function searchTools(catalog: ToolCatalog, query: string, limit: number):
     : documents.reduce((total, document) => total + document.tokens.length, 0) / documents.length
   const k1 = 1.2
   const b = 0.75
+  const documentFrequency = new Map<string, number>()
+  for (const term of queryTokens) {
+    let count = 0
+    for (const document of documents) {
+      if (document.tokens.includes(term)) count += 1
+    }
+    documentFrequency.set(term, count)
+  }
 
-  return documents
+  const ranked = documents
     .map(({ tool, group, text, tokens: documentTokens }) => {
       let score = 0
       const normalizedName = normalize(tool.name)
@@ -292,12 +314,8 @@ export function searchTools(catalog: ToolCatalog, query: string, limit: number):
       for (const term of queryTokens) {
         const frequency = termFrequency(documentTokens, term)
         if (frequency === 0) continue
-        const documentFrequency = documents.reduce(
-          (count, document) => count + (document.tokens.includes(term) ? 1 : 0),
-          0,
-        )
         const inverseFrequency = Math.log(
-          1 + (documents.length - documentFrequency + 0.5) / (documentFrequency + 0.5),
+          1 + (documents.length - (documentFrequency.get(term) ?? 0) + 0.5) / ((documentFrequency.get(term) ?? 0) + 0.5),
         )
         const denominator = frequency + k1 * (1 - b + b * documentTokens.length / averageLength)
         score += inverseFrequency * (frequency * (k1 + 1)) / denominator * 10
@@ -314,8 +332,12 @@ export function searchTools(catalog: ToolCatalog, query: string, limit: number):
     .sort((left, right) => right.score - left.score
       || left.tool.estimatedTokens - right.tool.estimatedTokens
       || left.tool.name.localeCompare(right.tool.name))
-    .slice(0, limit)
-    .map(({ tool, score, group }) => ({
+  const exact = ranked.find(candidate => normalize(candidate.tool.name) === normalizedQuery)
+  // An exact registered name is the target. Do not append the next lexical neighbor.
+  const selected = exact !== undefined
+    ? [exact]
+    : dropLowRelevance(ranked, queryTokens).slice(0, limit)
+  return selected.map(({ tool, score, group }) => ({
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,

@@ -30,6 +30,7 @@
     "lint": "oxlint src tests",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "baseline": "vitest run tests/baseline-cli.spec.ts",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run build && pnpm run publint",
     "publint": "publint",
     "prepare": "pnpm run build",

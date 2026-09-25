@@ -208,12 +208,16 @@ describe('progressive tools plugin', () => {
     const value = search.isError
       ? undefined
       : search.value as {
-          matches: { name: string; groupTools: string[] }[]
-          discoveredTools: string[]
+          matches: { name: string }[]
+          families: { id: string; tools: { name: string; contract: string }[] }[]
         }
     expect(value?.matches).toHaveLength(1)
-    expect([...value?.matches[0]?.groupTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
-    expect([...value?.discoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+    expect(value?.families).toHaveLength(1)
+    expect(value?.families[0]?.tools.map(tool => tool.name).sort()).toEqual(['browser_click', 'browser_open'])
+    const loaded = value?.families[0]?.tools.find(tool => tool.name === value.matches[0]?.name)
+    expect(loaded?.contract).toBe('schema')
+    const siblingContract = value?.families[0]?.tools.find(tool => tool.name !== value.matches[0]?.name)
+    expect(siblingContract?.contract).toBe('name-only')
 
     const sibling = value?.matches[0]?.name === 'browser_open' ? 'browser_click' : 'browser_open'
     const dispatched = await execute(ctx, agent, 'tool_dispatch', { name: sibling, arguments: {} }, 'family-dispatch')
@@ -264,21 +268,22 @@ describe('progressive tools plugin', () => {
     const firstText = first.isError ? '{}' : (first.content[0] as { type: 'text'; text: string }).text
     const firstRendered = JSON.parse(firstText) as Record<string, unknown>
     expect(firstRendered.allDiscoveredTools).toBeUndefined()
-    expect([...firstRendered.discoveredTools as string[]].sort()).toEqual(['browser_click', 'browser_open'])
-    expect(firstRendered.discoveredCount).toBe(2)
-    // The execution value keeps the cumulative list so presentation meta can
-    // carry it for resume even though the rendered text drops it.
-    const firstValue = first.isError ? undefined : first.value as { allDiscoveredTools: string[] }
-    expect([...firstValue?.allDiscoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+    expect(firstRendered.resume).toBeUndefined()
+    expect(firstRendered.estimatedSavedTokens).toBeUndefined()
+    const firstValue = first.isError ? undefined : first.value as { allDiscoveredTools?: unknown; families: { tools: { name: string }[] }[] }
+    expect(firstValue?.allDiscoveredTools).toBeUndefined()
+    expect(firstValue?.families[0]?.tools.map(tool => tool.name).sort()).toEqual(['browser_click', 'browser_open'])
+    const firstMeta = first.isError ? undefined : first.meta as { discoveredTools: string[]; omittedDefinitionTokens: number }
+    expect([...(firstMeta?.discoveredTools ?? [])].sort()).toEqual(['browser_click', 'browser_open'])
+    expect(firstMeta?.omittedDefinitionTokens).toBeGreaterThan(0)
 
     const second = await execute(ctx, agent, 'tool_search', { query: 'browser navigation' }, 'increment-2')
     expect(second.isError).toBe(false)
     const secondText = second.isError ? '{}' : (second.content[0] as { type: 'text'; text: string }).text
-    const secondRendered = JSON.parse(secondText) as Record<string, unknown>
-    expect(secondRendered.discoveredTools).toEqual([])
-    expect(secondRendered.discoveredCount).toBe(2)
-    const secondValue = second.isError ? undefined : second.value as { allDiscoveredTools: string[] }
-    expect([...secondValue?.allDiscoveredTools ?? []].sort()).toEqual(['browser_click', 'browser_open'])
+    const secondRendered = JSON.parse(secondText) as { allDiscoveredTools?: unknown }
+    expect(secondRendered.allDiscoveredTools).toBeUndefined()
+    const secondValue = second.isError ? undefined : second.value as { allDiscoveredTools?: unknown }
+    expect(secondValue?.allDiscoveredTools).toBeUndefined()
   })
 
   it('restores cumulative discovery from a stable search result projection', async () => {

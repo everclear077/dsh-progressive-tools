@@ -5,7 +5,10 @@ These are priorities, not scheduled commitments.
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
 | Done in 0.4.0 | Adapt to runtime 0.1.5-rc.1 | Required checks and peer validation pass; 46 regression tests |
-| Next | Real deployment and task benchmark | Same tasks/configuration compare native, PTC and stable-proxy; report success, total tokens, cache hits and latency |
+| Next | Paid A–E task benchmark | Same tasks, model, and host config; report success, total cost, cache, searches, and reread cost. The offline helper exists; the paid run does not |
+| Done in this checkout | Code-mode model budget behind `resultBudget` | `run_code` model text is replaced after post-execute; the program value stays intact |
+| Blocked | Native deferred-tool schema | Host `ToolSchema` grows a public deferred field and a compatibility test |
+| Blocked | Paid A–E task cost | A model route, comparable sessions, and an explicit price config |
 | Next | Expand recovery and pipeline scenarios | Real interpreter, cancellation, non-text results, storage resume and compaction evidence |
 | Conditional | Cache catalog indexing | Large-catalog measurements show ranking overhead is material |
 | Ongoing | Verify new host releases | Version-specific type, lifecycle and request regression matrix |
