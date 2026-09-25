@@ -4,6 +4,7 @@ These are priorities, not scheduled commitments.
 
 | Priority | Work | Completion evidence |
 | --- | --- | --- |
+| Done in 0.5.0 | Remove duplicated discovery and dispatch results | Required checks pass; 73 regression tests. Paid task cost is still unmeasured |
 | Done in 0.4.0 | Adapt to runtime 0.1.5-rc.1 | Required checks and peer validation pass; 46 regression tests |
 | Next | Paid A–E task benchmark | Same tasks, model, and host config; report success, total cost, cache, searches, and reread cost. The offline helper exists; the paid run does not |
 | Done in this checkout | Code-mode model budget behind `resultBudget` | `run_code` model text is replaced after post-execute; the program value stays intact |

@@ -1,4 +1,4 @@
-# Upgrade to 0.4.0
+# Upgrade to 0.5.0
 
 ## Compatibility change
 
@@ -12,7 +12,7 @@ retain their names and defaults.
 1. Record the existing host version, plugin commit/tag, and profile configuration.
 2. Back up session data using the host's supported storage procedure.
 3. Upgrade the host and its profile composition together to the required baseline.
-4. Install the plugin's `v0.4.0` tag using the command in the overview.
+4. Install the plugin's `v0.5.0` tag, or npm package `dsh-progressive-tools@0.5.0`, using the command in the overview.
 5. Inspect `--dump-config`, then start a fresh session and run the discovery smoke test.
 6. Test a restored session separately before making it the default deployment.
 

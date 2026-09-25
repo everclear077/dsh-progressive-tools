@@ -70,7 +70,7 @@ describe('deterministic volume baseline', () => {
     expect(current.content).toBe(body)
     expect(currentProgram.characters).toBeLessThan(legacyProgram.characters)
     const report = buildBaselineReport({
-      pluginVersion: '0.4.0',
+      pluginVersion: '0.5.0',
       hostVersion: '0.1.5-rc.1',
       config: { mode: 'stable-proxy', legacyResults: false, resultBudget: false },
       catalogToolCount: 1,

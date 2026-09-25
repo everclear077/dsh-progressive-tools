@@ -1,7 +1,7 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.4.0-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.5.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
@@ -204,7 +204,7 @@ set.
 
 ## Runtime compatibility
 
-Version `0.4.0` targets runtime `0.1.5-rc.1`. Core peer versions are
+Version `0.5.0` targets runtime `0.1.5-rc.1`. Core peer versions are
 pinned to that tested release; older runtimes and later prereleases are not
 covered. Earlier plugin versions predate this adaptation. The command below
 uses the release tag for reproducible deployments.
@@ -212,8 +212,10 @@ uses the release tag for reproducible deployments.
 ## Install
 
 ```sh
-dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.4.0
+dsh plugin --profile web add github:everclear077/dsh-progressive-tools#v0.5.0
 ```
+
+The same version is published on the npm registry as `dsh-progressive-tools@0.5.0`.
 
 Source installs run the package `prepare` script. If pnpm asks for build
 authorization, add the exact package key it reports to the profile's

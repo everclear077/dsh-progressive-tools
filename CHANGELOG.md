@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-25
+
 ### Changed
 
 - Default stable search results use `dsh-progressive-tools/v3`: an exact name
@@ -170,7 +172,8 @@ prefix is byte-stable again from the second request onward.
 - Bundle manifest, GitHub source-install build path, documentation, tests, and
   continuous integration.
 
-[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/everclear077/dsh-progressive-tools/compare/f2bd297...v0.4.0
 [0.3.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.2.0...f2bd297
 [0.2.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.1.0...v0.2.0
