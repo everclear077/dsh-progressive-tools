@@ -11,8 +11,8 @@ The plugin itself does not rewrite session storage.
 Agent creation is asynchronous and the integration harness mounts session
 projections. Request prefix tests compare the leading system-role message,
 because loop-built requests no longer populate the standalone `system` field.
-Additional PTC/both tests exercise the real dispatch bridge with a binding
-runtime fixture, checking both SDK languages and unload/reload replay. They
+Additional PTC/both tests exercise the real dispatch bridge through
+`ctx.ptcRuntime`, checking both SDK languages and unload/reload replay. They
 do not certify the language interpreters or measure provider cache savings.
 
 ## Goals and invariants
@@ -214,6 +214,8 @@ Discovery state is recorded asymmetrically. The default search value
 result's presentation metadata, which never reaches the model, carries that
 list plus `omittedDefinitionTokens`. `estimatedSavedTokens` in the same
 metadata is the same number and is not a bill. Old v2 records are still read.
+Current tool results store model content directly on the tool message. Replay
+also accepts older logs that wrap that content in a `tool-result` block.
 
 On resume the plugin replays successful search results and skill bindings,
 preferring the cumulative metadata when present and unioning per-call

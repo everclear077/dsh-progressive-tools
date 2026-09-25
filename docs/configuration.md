@@ -7,8 +7,9 @@ fail loudly.
 ## Runtime compatibility
 
 Version `0.6.0` targets runtime `0.1.7-rc.2` and pins its core peers
-to that tested version. Do not install it into a `0.1.1-rc.2` profile or assume
-compatibility with later prereleases. Existing plugin configuration remains
+to that tested version. `0.1.5-rc.1` and earlier baselines are not accepted.
+Do not assume compatibility with a later prerelease without a new compatibility
+run. Existing plugin configuration remains
 unchanged. PTC presentation is configured on the host tool runtime with
 `mode: ptc` or `mode: both`; the plugin's own `mode` still selects
 `stable-proxy` or `dynamic`.

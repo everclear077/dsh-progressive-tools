@@ -9,9 +9,9 @@ pnpm peers check
 ```
 
 `check` runs type checking, lint, tests, build, and package validation.
-It must pass before merge or release. The `0.5.1` snapshot has 73 tests
-across eight files. Counts are a snapshot, not a coverage guarantee. The PTC suite still
-uses a binding fixture, not a language interpreter. `pnpm run baseline` is a
+It must pass before merge or release. The `0.6.0` snapshot has 73 tests
+across eight files, run against host `0.1.7-rc.2`. Counts are a snapshot, not a coverage guarantee. The PTC suite still
+uses a `ctx.ptcRuntime` binding fixture, not a language interpreter. `pnpm run baseline` is a
 local character measurement, not a paid task run.
 
 | Suite | What it verifies |
@@ -25,7 +25,7 @@ local character measurement, not a paid task run.
 | `baseline-cli.spec.ts` | Deterministic character report for direct content and whole-object program returns |
 | `remaining.spec.ts` | Autoload, auto profile, `run_code` model budget, cancellation, deferred-protocol probe, offline arms |
 
-The PTC suite uses a binding runtime fixture: it invokes the real registry
+The PTC suite uses a `ctx.ptcRuntime` binding fixture: it invokes the real registry
 bindings and durable dispatch pipeline but does not launch a TypeScript or
 Python interpreter. The request suite intercepts streaming; it uses no remote
 provider or credentials. CI runs the required check on Node 22.19.0 and 24.
