@@ -71,7 +71,10 @@ run, searches that only proved a name was missing) land in conversation
 history. Cache-read volume falls because the stable prefix no longer carries
 dozens of unused schemas. Billing still usually tracks cache reads at a lower
 rate than fresh input; the combined column is the raw token volume, not a
-vendor price.
+vendor price. These rows are not a bill. `omittedDefinitionTokens`
+(still mirrored as `estimatedSavedTokens` in result metadata) estimates
+deferred definitions left off the top-level tool list. It is not a net task
+saving. See [cost metrics](docs/cost-metrics.md).
 
 Restricting the same 100 turns to ordinary work (**S1–S7**, 87 turns, no
 invented-name probes):
@@ -267,10 +270,16 @@ The next call uses one returned definition:
 }
 ```
 
-Each match also lists every member tool name of its family, and the whole
-family becomes dispatchable from that one search — siblings that did not make
-the top-ranked slice can be dispatched by name or schema-loaded with one
-exact-name query.
+The result lists each matched family once. Siblings that did not make the
+top-ranked slice are marked `name-only`: they are dispatchable, and one
+exact-name search loads their parameters. An exact registered name returns
+only that tool. A repeated search returns a short notice when that same
+definition is still in derived history; pass `reload: true` for the full
+schema. The program value of `tool_dispatch` is `{ protocol, tool, value }`
+and does not repeat the rendered body. Set `legacyResults: true` to restore
+the previous envelopes. `resultBudget` also shortens the model-facing
+`run_code` text and leaves the program value intact. `autoloadMaxTools`
+and `profile: auto` stay off unless set; the default surface is unchanged.
 
 `tool_search` also accepts `{"action":"status"}`, which lists every deferred
 family with its member tool names alongside catalog and savings estimates. By

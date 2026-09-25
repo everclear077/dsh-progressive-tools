@@ -213,6 +213,10 @@ dsh --profile web --dump-config
 说明：任务需要某类能力时先搜索；若只是被要求调用一个可见列表里没有的名字，
 且说明无法调用即可，则不要为了证明它不存在而去搜索。若仍用标识符精确名搜
 索且目录中没有该名字，搜索返回空结果，而不是用无关 schema 填满 `maxResults`。
+命中的精确名只返回该工具。同一家族只列一次成员表。`tool_dispatch` 交给程序的
+值是 `{ protocol, tool, value }`，不再附带一份相同的渲染正文。`legacyResults: true`
+恢复旧返回信封。打开 `resultBudget` 后，`run_code` 的模型文本会被缩短，程序值保持完整。
+`autoloadMaxTools` 和 `profile: auto` 默认关闭，不改变默认工具面。指标说明见 [成本指标](docs/cost-metrics.md)。
 
 搜索工具定义：
 

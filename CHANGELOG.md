@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Default stable search results use `dsh-progressive-tools/v3`: an exact name
+  returns only that tool, a family member table is listed once, cumulative
+  discovery stays in presentation metadata, and repeated definitions already
+  present in derived history return a short notice unless `reload` is set.
+- Default `tool_dispatch` returns `dsh-progressive-tools/dispatch-v2`
+  (`protocol`, `tool`, `value`). Rendered content is not copied into the
+  program value. `legacyResults: true` restores the previous envelopes.
+- `estimatedSavedTokens` remains a metadata alias of `omittedDefinitionTokens`.
+  It estimates definitions omitted from the top-level tool list. It is not a
+  net task saving.
+- Deferred `tool:<name>` guidance is removed from the stable prompt and
+  attached when that tool's definition is loaded. A frozen capability summary
+  lists classes without members or live discovery counts.
 - Keep high-frequency filesystem tools (`read`, `write`, `edit`, `glob`,
   `grep`) on the default stable surface so ordinary file work does not pay a
   search-then-dispatch round.
@@ -18,6 +31,20 @@ All notable changes to this project are documented here. The format follows
   before declaring a needed capability class unavailable. An unmatched
   identifier query now returns no definitions instead of filling `maxResults`
   with unrelated schemas.
+
+### Added
+
+- `maxResultCharacters`, `repeatDefinitions`, `profile: coding` (optional),
+  `resultBudget` (optional, with `tool_result_read`), and `familyDiscovery`.
+- `pnpm run baseline` writes a deterministic character report. It does not
+  call a model. Paid task comparison is still outstanding.
+- `resultBudget` also replaces the model-facing `run_code` text through
+  `tools/post-execute`. The program value is unchanged, and a nested dispatch
+  is not budgeted a second time.
+- `autoloadMaxTools` (default `0`) can place a small deferred catalog on the
+  frozen surface. `profile: auto` adds registered terminal tools at the first
+  assembly. Neither changes the default surface.
+- Search counts document frequency once per query. Exact-name ranking is unchanged.
 
 ### Docs
 

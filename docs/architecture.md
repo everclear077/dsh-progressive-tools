@@ -111,12 +111,14 @@ such as `tool`. Search otherwise returns at most `maxResults` exact
 definitions; larger `max_results` requests are clamped. Those definitions
 enter the ordinary tool result and therefore extend history append-only.
 
-Each match also lists every member name of its family (`groupTools`), and the
-whole family becomes discovered in the same call. One query therefore opens a
-plugin's complete tool surface even when only its top-ranked members carry
-full schemas; the remaining siblings dispatch by name and validate against
-their original definitions, or can be schema-loaded first with one exact-name
-search.
+An exact registered name returns only that tool. Other queries return at most
+`maxResults` definitions and also stop at `maxResultCharacters`. Schemas are
+not cut to fit. One definition that is larger than the budget is returned
+whole, with `budget.singleDefinitionExceedsBudget`. The family member table
+appears once on `families`, not on every match. `schema` means parameters are
+in the result; `name-only` means the sibling can be dispatched or loaded with
+an exact-name search; `skill` means a configured Skill supplies the contract.
+The whole family is still discovered unless `familyDiscovery` is `matched`.
 
 The `status` action lists every deferred family with its member tool names, so
 the model can browse the catalog when a search query has no lexical overlap.
@@ -150,10 +152,21 @@ tool_dispatch root execution
 
 Nested contexts and a successful turn-conclusion marker are ferried back to
 the outer result. The outer rendering uses the real tool's finalized content,
-including non-text blocks. A nested failure is rethrown with the real tool's
-structured error code preserved, and the dispatcher delegates its
-parallel-scheduling classification to the target tool's own declaration, so
-concurrency-safe deferred tools keep overlapping with sibling calls.
+including non-text blocks. The default program value is
+`dsh-progressive-tools/dispatch-v2`: `{ protocol, tool, value }`. Rendered
+content is not copied into that value, so a program that returns the whole
+object does not repeat the body. `legacyResults` restores
+`dsh-progressive-tools/dispatch-v1`, which includes `content`. A nested
+failure is rethrown with the real tool's structured error code preserved, and
+the dispatcher delegates its parallel-scheduling classification to the target
+tool's own declaration, so concurrency-safe deferred tools keep overlapping
+with sibling calls.
+
+`resultBudget` applies to a direct `tool_dispatch` rendering. A dispatch nested
+under `run_code` keeps the target rendering so the body is not compressed
+twice. The outer `run_code` model text is then replaced in `tools/post-execute`.
+The canonical program value is not truncated. `tools/ptc-dispatch-log` is still
+only a durable log copy.
 
 ### Routing guard
 
@@ -196,11 +209,11 @@ section is outside the discovery invariant.
 
 ## Resume behavior
 
-Discovery state is recorded asymmetrically. The rendered search result — the
-text the model reads and re-reads in history — carries only the names newly
-discovered by that call, so conversation growth stays bounded no matter how
-much has been discovered. The result's presentation metadata, which never
-reaches the model, carries the cumulative discovered list and the action kind.
+Discovery state is recorded asymmetrically. The default search value
+(`dsh-progressive-tools/v3`) does not carry the cumulative name list. The
+result's presentation metadata, which never reaches the model, carries that
+list plus `omittedDefinitionTokens`. `estimatedSavedTokens` in the same
+metadata is the same number and is not a bill. Old v2 records are still read.
 
 On resume the plugin replays successful search results and skill bindings,
 preferring the cumulative metadata when present and unioning per-call
