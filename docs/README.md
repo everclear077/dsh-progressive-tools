@@ -1,6 +1,6 @@
 # Documentation map
 
-Release baseline: plugin `0.6.0`, host runtime `0.1.7-rc.2`.
+Release baseline: plugin `0.7.0`, host runtime `0.2.0-rc.1`.
 
 | Your task | Start here |
 | --- | --- |

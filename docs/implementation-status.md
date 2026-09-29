@@ -1,7 +1,7 @@
 # Cost-optimization status
 
 Checked against the current worktree before implementation. Plugin version
-`0.6.0`. Host peers are pinned to `0.1.7-rc.2`. The installed host packages
+`0.7.0`. Host peers are pinned to `0.2.0-rc.1`. The installed host packages
 expose tool execution, rendering, presentation metadata, and
 `tools/ptc-dispatch-log`. That last event changes only the durable log copy.
 This checkout does not ship a public result-spill service the plugin can call.
@@ -25,13 +25,13 @@ This checkout does not ship a public result-spill service the plugin can call.
 | P5 paid A–E task runs | Not run. This checkout has no price config and no live session. The redacted fixture stays unknown |
 | Small-catalog autoload | Done, off by default (`autoloadMaxTools: 0`) |
 | Startup profile selection | Done as `profile: auto`, off by default |
-| Native deferred-tool protocol | Not available. Host `ToolSchema` is name, description, and parameters. The probe records that and does not invent a field |
+| Native deferred-tool protocol | Host `ToolSchema.deferLoading` is recognized. stable-proxy still omits deferred catalog tools, because routes without tool updates send that flag as an immediate schema. Stable-surface tools keep the flag |
 | Large-catalog index | Done. Document frequency is counted once per query. Ranking for an exact name is unchanged |
 | Tool-call timeout policy | Host-owned. This package does not include the timeout policy plugin. Cancellation is forwarded and covered by tests |
 
 ## Host gap
 
 `tools/ptc-dispatch-log` still changes only the durable log copy. The model-visible
-`run_code` budget uses `tools/post-execute` content replacement. There is still
-no public schema field for a native deferred-tool protocol, and no timeout
-policy package in this install.
+`run_code` budget uses `tools/post-execute` content replacement. `deferLoading`
+is recognized and is not the discovery path. This install still has no timeout
+policy package.

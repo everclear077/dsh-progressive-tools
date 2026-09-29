@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-29
+
+### Changed
+
+- Target host runtime `0.2.0-rc.1`. Core peers match that baseline.
+  `0.1.7-rc.2` is no longer accepted. Cordis `~4.0.4` and the validator
+  `~3.18.4` are unchanged.
+- Recognize host `ToolSchema.deferLoading`. stable-proxy still removes
+  deferred catalog tools from the assembled request. A tool already on the
+  stable surface keeps the flag. Routes without tool updates materialize
+  that flag as an immediate schema, so it is not the discovery mechanism.
+
 ## [0.6.0] - 2026-09-25
 
 ### Changed
@@ -189,7 +201,8 @@ prefix is byte-stable again from the second request onward.
 - Bundle manifest, GitHub source-install build path, documentation, tests, and
   continuous integration.
 
-[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/everclear077/dsh-progressive-tools/compare/v0.4.0...v0.5.0

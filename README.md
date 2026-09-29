@@ -1,7 +1,7 @@
 # DSH Progressive Tools
 
 [![CI](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/everclear077/dsh-progressive-tools/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.6.0-blue.svg)](./CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-0.7.0-blue.svg)](./CHANGELOG.md)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Cache-stable progressive tool discovery for DeepSeek Harness. The default mode
@@ -210,28 +210,30 @@ set.
 ## Requirements
 
 - Node.js `^22.19.0` or `>=24.0.0`
-- Host runtime `0.1.7-rc.2` (exact tested core peer versions)
+- Host runtime `0.2.0-rc.1` (exact tested core peer versions)
 - pnpm for source installation and development
 
 ## Runtime compatibility
 
-Version `0.6.0` targets runtime `0.1.7-rc.2`. Core peer versions are
+Version `0.7.0` targets runtime `0.2.0-rc.1`. Core peer versions are
 pinned to that tested release; older runtimes and later prereleases are not
 covered. Install the pinned npm version below so a profile does not float to
-a later release.
+a later release. Host `deferLoading` stays on tools that are already on the
+stable surface. Deferred catalog tools stay off the assembled request, because
+routes without tool updates would otherwise send those schemas in full.
 
 ## Install
 
 Add the package to a Harness profile from the official npm registry:
 
 ```sh
-dsh plugin --profile web add npm:@everclear077/dsh-progressive-tools@0.6.0
+dsh plugin --profile web add npm:@everclear077/dsh-progressive-tools@0.7.0
 ```
 
 Harness resolves that `npm:` spec with the active npm registry. Use the official registry when a mirror does not have this package:
 
 ```sh
-npm install @everclear077/dsh-progressive-tools@0.6.0 --registry https://registry.npmjs.org
+npm install @everclear077/dsh-progressive-tools@0.7.0 --registry https://registry.npmjs.org
 ```
 
 The package name is `@everclear077/dsh-progressive-tools`. The unscoped name

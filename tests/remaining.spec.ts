@@ -8,7 +8,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
-import { probeDeferredProtocol } from '../src/deferred-protocol.js'
+import { HOST_DEFERRED_FIELD, probeDeferredProtocol } from '../src/deferred-protocol.js'
 import { compareOfflineArms, redactedFixtureCost } from '../src/offline-eval.js'
 import * as ProgressiveTools from '../src/index.js'
 
@@ -251,10 +251,42 @@ describe('remaining cost work', () => {
     expect(result.isError).toBe(true)
   })
 
-  it('records that this host has no native deferred-tool schema', () => {
-    const probe = probeDeferredProtocol(['name', 'description', 'parameters'])
-    expect(probe.supported).toBe(false)
-    expect(probe.reason).toContain('No public deferred-tool field')
+  it('keeps host deferLoading on the stable surface and off the deferred catalog', async () => {
+    const hosted = await surface({
+      tools: [
+        defineTool({
+          name: 'read',
+          description: 'Read a file',
+          deferLoading: true,
+          parameters: {},
+          output: {
+            schema: { type: 'string' },
+            render: () => [{ type: 'text', text: 'ok' }],
+          },
+          execute: async () => 'ok',
+        }),
+        defineTool({
+          name: 'browser_open',
+          description: 'Open a page',
+          deferLoading: true,
+          parameters: {},
+          output: {
+            schema: { type: 'string' },
+            render: () => [{ type: 'text', text: 'ok' }],
+          },
+          execute: async () => 'ok',
+        }),
+      ],
+      config: {},
+    })
+    const projected = hosted.ctx.tools.schemas(hosted.agent).find(tool => tool.name === 'browser_open')
+    expect(projected?.deferLoading).toBe(true)
+    const probe = probeDeferredProtocol(Object.keys(projected ?? {}))
+    expect(probe).toMatchObject({ supported: true, field: HOST_DEFERRED_FIELD })
+    expect(hosted.assembled.tools.map(tool => tool.name)).not.toContain('browser_open')
+    expect(hosted.assembled.tools.find(tool => tool.name === 'read')).toMatchObject({ deferLoading: true })
+    expect(probeDeferredProtocol(['name', 'description', 'parameters']).supported).toBe(false)
+    expect(probeDeferredProtocol(['name', 'description', 'parameters', 'custom']).supported).toBe(false)
   })
 
   it('compares offline arms and keeps a redacted fixture cost unknown', () => {

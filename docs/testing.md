@@ -9,8 +9,8 @@ pnpm peers check
 ```
 
 `check` runs type checking, lint, tests, build, and package validation.
-It must pass before merge or release. The `0.6.0` snapshot has 73 tests
-across eight files, run against host `0.1.7-rc.2`. Counts are a snapshot, not a coverage guarantee. The PTC suite still
+It must pass before merge or release. The `0.7.0` snapshot has 73 tests
+across eight files, run against host `0.2.0-rc.1`. Counts are a snapshot, not a coverage guarantee. The PTC suite still
 uses a `ctx.ptcRuntime` binding fixture, not a language interpreter. `pnpm run baseline` is a
 local character measurement, not a paid task run.
 

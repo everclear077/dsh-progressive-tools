@@ -2,8 +2,13 @@
 
 ## Runtime baseline
 
-The current checkout targets `0.1.7-rc.2`. Calls use `ToolCallId`, and replay
+The current checkout targets `0.2.0-rc.1`. Calls use `ToolCallId`, and replay
 reads `session.snapshotEvents()` instead of the former mutable event view.
+Host tool schemas may include `deferLoading`. stable-proxy still removes
+deferred catalog tools from the assembled request, because a route without
+tool updates strips that flag and sends the full schema. A tool that is
+already on the stable surface keeps the flag.
+
 Current PTC subcalls persist `tool/ptc-dispatch`; replay also recognizes old
 `tool/code-dispatch` records retained as ignorable events by host migration.
 The plugin itself does not rewrite session storage.

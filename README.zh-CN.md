@@ -176,21 +176,23 @@ S1–S7 的任务质量没有回退。100 轮 S8 的打分过严：只要搜索 
 
 ## 运行时兼容性
 
-`0.6.0` 版本适配运行时 `0.1.7-rc.2`，核心 peer 依赖固定到该验证版本，
+`0.7.0` 版本适配运行时 `0.2.0-rc.1`，核心 peer 依赖固定到该验证版本，
 不承诺兼容旧运行时或后续预发布版本。安装时固定下面的 npm 版本，避免装到后续发布。
+已经留在稳定工具面上的工具会保留宿主的 `deferLoading` 标记。延迟目录中的工具
+仍然不会进入组装后的请求：不支持工具更新的路由会把该标记展开成完整 schema。
 
 ## 安装
 
 从官方 npm 源把插件加入 Harness profile：
 
 ```sh
-dsh plugin --profile web add npm:@everclear077/dsh-progressive-tools@0.6.0
+dsh plugin --profile web add npm:@everclear077/dsh-progressive-tools@0.7.0
 ```
 
 Harness 会用当前 npm 源解析这个 `npm:` 说明。镜像源没有这个包时，改用官方源安装：
 
 ```sh
-npm install @everclear077/dsh-progressive-tools@0.6.0 --registry https://registry.npmjs.org
+npm install @everclear077/dsh-progressive-tools@0.7.0 --registry https://registry.npmjs.org
 ```
 
 包名是 `@everclear077/dsh-progressive-tools`。无作用域的 `dsh-progressive-tools`

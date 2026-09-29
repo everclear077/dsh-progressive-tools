@@ -6,11 +6,12 @@ fail loudly.
 
 ## Runtime compatibility
 
-Version `0.6.0` targets runtime `0.1.7-rc.2` and pins its core peers
-to that tested version. `0.1.5-rc.1` and earlier baselines are not accepted.
+Version `0.7.0` targets runtime `0.2.0-rc.1` and pins its core peers
+to that tested version. `0.1.7-rc.2` and earlier baselines are not accepted.
 Do not assume compatibility with a later prerelease without a new compatibility
 run. Existing plugin configuration remains
-unchanged. PTC presentation is configured on the host tool runtime with
+unchanged. Host `deferLoading` is preserved on tools that stay on the stable
+surface. Deferred catalog tools are still omitted from the assembled request. PTC presentation is configured on the host tool runtime with
 `mode: ptc` or `mode: both`; the plugin's own `mode` still selects
 `stable-proxy` or `dynamic`.
 

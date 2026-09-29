@@ -28,7 +28,7 @@ families at the cost of cache stability.
 
 ## Commands
 
-Current release: `0.6.0`; supported host core baseline: `0.1.7-rc.2`.
+Current release: `0.7.0`; supported host core baseline: `0.2.0-rc.1`.
 Core peers are pinned to the tested prerelease. Do not broaden the range
 without a compatibility run. Read [docs/README.md](./docs/README.md) for
 onboarding, migration, testing, release and maintenance guidance.
